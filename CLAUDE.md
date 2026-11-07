@@ -48,8 +48,10 @@ instead of passing loose dicts.
 - **"Shared film" always means both people *rated* it.** Unrated watched films
   affect library overlap and the share breakdowns only, never similarity.
 - **Enrichment is optional data.** A film with `FilmInfo.status != "ok"` is
-  excluded from the genre, decade and language sections and counted toward the
+  excluded from the genre and language sections and counted toward the
   partial-report notice — it is never dropped from similarity or ratings.
+  Decades are the exception: they use the release year the export already
+  carries, so enrichment status does not affect them.
   `Group.enriched()` enforces this; use it rather than `Group.films[...]`.
 - **Metrics are pure.** No fetching, no file access, no number formatting in
   `metrics.py` or `recommend.py`. That is what makes them testable by hand.
@@ -70,9 +72,11 @@ agent, exponential backoff, resume from cache, and stop after 5 consecutive
 403/429 responses to build a partial report instead. Only film pages are
 fetched — never profile pages.
 
-**Open risk:** it is not yet confirmed that a script can fetch film pages at
-all. A plain fetch tool was blocked as a bot where a real browser session was
-not. Milestone 1 settles this before anything is built on top of it.
+**Fetching works, with care:** a plain `requests` session with browser-like
+headers is served normally (confirmed against live pages in Nov 2026; see the
+`enrich.py` docstring), although a plain fetch tool was blocked as a bot. Keep
+the browser-like headers, and treat a run of 403/429 responses as the signal
+that this has changed.
 
 ## Report constraints
 
