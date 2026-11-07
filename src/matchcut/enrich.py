@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,7 +51,6 @@ HEADERS = {
 
 #: Headings in the film page's details panel, which is where languages live.
 PRIMARY_LANGUAGE_HEADINGS = ("primary language", "language")
-SPOKEN_LANGUAGE_HEADINGS = ("spoken languages", "languages")
 
 #: Flush the cache this often, so an interrupted run loses almost nothing.
 SAVE_EVERY = 25
@@ -192,7 +191,7 @@ def _get_with_backoff(session: requests.Session, boxd_id: str) -> str:
 def parse_film_page(
     html: str, boxd_id: str, fallback: FilmRef | None = None
 ) -> FilmInfo:
-    """Pull title, year, slug, genres, languages and TMDB id out of a page.
+    """Pull title, year, genres, primary language and TMDB id out of a page.
 
     Tested against `tests/fixtures/film_page.html`, never the live site.
     """
@@ -201,7 +200,6 @@ def parse_film_page(
     body = soup.find("body")
     tmdb_id = body.get("data-tmdb-id") if body else None
 
-    slug = _parse_slug(soup)
     title, year = _parse_title_year(soup)
     if fallback is not None:
         title = title or fallback.title
@@ -209,34 +207,17 @@ def parse_film_page(
 
     genres = _slug_list(soup, "tab-panel-genres", "Genres", "/films/genre/")
     primary = _primary_language(soup)
-    spoken = _language_list(soup, SPOKEN_LANGUAGE_HEADINGS) or (
-        [primary] if primary else []
-    )
 
     return FilmInfo(
         boxd_id=boxd_id,
         title=title or boxd_id,
         year=year,
-        slug=slug,
         genres=genres,
         primary_language=primary,
-        spoken_languages=spoken,
         tmdb_id=str(tmdb_id) if tmdb_id else None,
         status="ok",
         fetched_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
-
-
-def _parse_slug(soup: BeautifulSoup) -> str | None:
-    """The `/film/<slug>/` part of the page's own canonical URL."""
-    for node, attr in (
-        (soup.find("link", rel="canonical"), "href"),
-        (soup.find("meta", attrs={"property": "og:url"}), "content"),
-    ):
-        url = node.get(attr) if node else None
-        if url and "/film/" in url:
-            return url.split("/film/", 1)[1].strip("/").split("/")[0] or None
-    return None
 
 
 #: `Challengers (2024)` -> `Challengers`, for the og:title fallback.
@@ -333,11 +314,14 @@ def load_cache(cache_path: Path) -> dict[str, FilmInfo]:
         raw = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+    known = {f.name for f in fields(FilmInfo)}
     films: dict[str, FilmInfo] = {}
     for boxd_id, record in (raw.get("films") or {}).items():
         try:
-            films[boxd_id] = FilmInfo(**record)
-        except TypeError:
+            # Drop fields this version no longer has (older caches carry `slug`
+            # and `spoken_languages`), so an existing cache keeps working.
+            films[boxd_id] = FilmInfo(**{k: v for k, v in record.items() if k in known})
+        except (TypeError, AttributeError):
             continue
     return films
 
