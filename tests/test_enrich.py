@@ -75,6 +75,36 @@ def test_unrecognisable_page_still_yields_a_record():
     assert info.year == 1999
     assert info.genres == []
     assert info.primary_language is None
+    # Nothing on the page is a film page, so it must not count as parsed.
+    assert info.status == "unparsed"
+
+
+def test_film_with_no_genres_is_still_ok():
+    """A real film page can list no genres; only a page with none of the film
+    page's structure is unparsed."""
+    info = parse_film_page(
+        '<html><body><h1 class="primaryname">Obscure</h1></body></html>',
+        "xxxx",
+    )
+    assert info.status == "ok"
+    assert info.genres == []
+
+
+def test_unparsed_page_is_counted_missing_and_not_cached(tmp_path, monkeypatch):
+    import matchcut.enrich as enrich_module
+
+    monkeypatch.setattr(
+        enrich_module, "_get_with_backoff", lambda session, boxd_id: "<html></html>"
+    )
+    monkeypatch.setattr(enrich_module.time, "sleep", lambda s: None)
+    cache = tmp_path / "films.json"
+    refs = {"xxxx": FilmRef("xxxx", "Whatever", 2000)}
+
+    films, missing = enrich_module.enrich(refs, cache)
+
+    assert missing == 1
+    assert films["xxxx"].status == "unparsed"
+    assert load_cache(cache) == {}
 
 
 def test_cache_round_trip(tmp_path, parsed):

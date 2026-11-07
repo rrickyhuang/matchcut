@@ -195,8 +195,18 @@ def parse_film_page(
     """Pull title, year, slug, genres, languages and TMDB id out of a page.
 
     Tested against `tests/fixtures/film_page.html`, never the live site.
+
+    A page showing none of the film page's own structure (a consent or
+    bot-challenge page, or a layout change) comes back with status
+    "unparsed", so it is counted as missing and never cached as if it were a
+    film with no genres.
     """
     soup = BeautifulSoup(html, "html.parser")
+    recognised = bool(
+        soup.select_one("h1.primaryname")
+        or soup.find(id="tab-panel-genres")
+        or soup.find(id="tab-panel-details")
+    )
 
     body = soup.find("body")
     tmdb_id = body.get("data-tmdb-id") if body else None
@@ -222,7 +232,7 @@ def parse_film_page(
         primary_language=primary,
         spoken_languages=spoken,
         tmdb_id=str(tmdb_id) if tmdb_id else None,
-        status="ok",
+        status="ok" if recognised else "unparsed",
         fetched_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
 
