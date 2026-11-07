@@ -1,4 +1,4 @@
-"""The CLI parser is real code already, so it is testable at scaffold time."""
+"""The CLI's argument parser: defaults, `--people` splitting, required folder."""
 
 import pytest
 
