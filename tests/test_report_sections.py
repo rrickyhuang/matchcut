@@ -1,4 +1,4 @@
-"""The report's section list is the contract the end-to-end test will check."""
+"""The report's section list, in order: the contract `test_report.py` checks."""
 
 from matchcut.render import SECTIONS
 
