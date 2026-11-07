@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "matchcut"
+version = "0.1.0"
+description = "Compare friends' Letterboxd exports and write one HTML report."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+matchcut = "matchcut.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/matchcut"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

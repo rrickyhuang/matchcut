@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+/* Grayscale only. Light and dark come from these tokens and nothing else. */
+:root {
+  --bg: #ffffff;
+  --surface: #f4f4f4;
+  --border: #d6d6d6;
+  --text: #1a1a1a;
+  --muted: #6b6b6b;
+  --mark: #3d3d3d;
+  --mark-faint: #b4b4b4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131313;
+    --surface: #1d1d1d;
+    --border: #363636;
+    --text: #ededed;
+    --muted: #9a9a9a;
+    --mark: #cfcfcf;
+    --mark-faint: #4a4a4a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131313;
+  --surface: #1d1d1d;
+  --border: #363636;
+  --text: #ededed;
+  --muted: #9a9a9a;
+  --mark: #cfcfcf;
+  --mark-faint: #4a4a4a;
+}
+body {
+  margin: 0;
+  padding: 2rem 1rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 56rem; margin: 0 auto; }
+section { margin: 0 0 3rem; }
+h1, h2 { font-weight: 600; letter-spacing: -0.01em; }
+h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+.basis { color: var(--muted); font-size: 0.85rem; }
+.flag { color: var(--muted); font-size: 0.8rem; font-style: italic; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { border-bottom: 1px solid var(--border); padding: 0.4rem 0.6rem; text-align: right; }
+th:first-child, td:first-child { text-align: left; }
+thead th { background: var(--surface); }
+svg { max-width: 100%; height: auto; }
+details > summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>{{ title }}</h1>
+{% if missing_enrichment %}
+<p class="flag">Partial report: {{ missing_enrichment }} films lack genre and
+language data and are left out of those sections.</p>
+{% endif %}
+{% block sections %}{% endblock %}
+</main>
+</body>
+</html>

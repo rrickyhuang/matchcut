@@ -1,0 +1,36 @@
+# Allowlist .gitignore: ignore everything, then un-ignore each tracked file.
+*
+
+# Allow descending into directories so the rules below can match nested files.
+!*/
+
+# --- tracked files ---
+!.gitignore
+!README.md
+!CLAUDE.md
+!pyproject.toml
+!src/matchcut/*.py
+!src/matchcut/templates/*
+!tests/*.py
+!tests/fixtures/**
+
+# --- never tracked (listed last so these win) ---
+
+# Real Letterboxd exports and generated reports hold other people's ratings.
+/exports/
+/cache/
+/*.html
+
+# Local design doc, kept off the public repo.
+/matchcut-spec.md
+
+# Python / tooling
+.venv/
+venv/
+dist/
+build/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+.pytest_cache/
+.ruff_cache/
