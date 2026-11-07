@@ -85,6 +85,9 @@ class Agreement:
     mean_spread: float | None
     unanimous: list[FilmLine] = field(default_factory=list)
     divisive: list[FilmLine] = field(default_factory=list)
+    #: Raters a film needed on the fallback basis; fewer than
+    #: `AGREEMENT_FALLBACK_RATERS` when the group is smaller than that.
+    min_raters: int = AGREEMENT_FALLBACK_RATERS
 
 
 @dataclass
@@ -262,18 +265,27 @@ def person_stats(group: Group) -> list[PersonStats]:
 
 
 def group_agreement(group: Group) -> Agreement:
-    """Per-film rating spread, with the basis it had to fall back to."""
+    """Per-film rating spread, with the basis it had to fall back to.
+
+    The fallback wants `AGREEMENT_FALLBACK_RATERS` raters per film, which a
+    pair cannot supply, so a smaller group falls back to as many as it has
+    (every member) rather than to an empty pool. The sample is small, and the
+    report says how many films it rests on.
+    """
     by_film = raters_by_film(group)
     everyone = len(group.people)
+    min_raters = min(AGREEMENT_FALLBACK_RATERS, everyone)
 
     full = {f: r for f, r in by_film.items() if len(r) == everyone}
     basis = "all"
     pool = full
     if len(full) < AGREEMENT_MIN_FILMS:
-        pool = {f: r for f, r in by_film.items() if len(r) >= AGREEMENT_FALLBACK_RATERS}
+        pool = {f: r for f, r in by_film.items() if len(r) >= min_raters}
         basis = "three-plus"
     if not pool:
-        return Agreement(basis=basis, films_counted=0, mean_spread=None)
+        return Agreement(
+            basis=basis, films_counted=0, mean_spread=None, min_raters=min_raters
+        )
 
     spreads = {f: max(r.values()) - min(r.values()) for f, r in pool.items()}
 
@@ -287,6 +299,7 @@ def group_agreement(group: Group) -> Agreement:
         basis=basis,
         films_counted=len(pool),
         mean_spread=_mean(spreads.values()),
+        min_raters=min_raters,
         unanimous=[
             _line(group, f, _mean(pool[f].values()), f"all within {s:g}")
             for f, s in tightest[:CONSENSUS_LIMIT]
