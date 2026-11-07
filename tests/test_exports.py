@@ -95,6 +95,81 @@ def test_half_star_ratings_are_kept(tmp_path):
     assert load_person(path).ratings == {"aaa": 0.5, "bbb": 4.5}
 
 
+def _zip_with(tmp_path, **members: str):
+    path = tmp_path / "letterboxd-hal-2026-01-01-00-00-utc.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, text in members.items():
+            archive.writestr(f"{name}.csv", text)
+    return path
+
+
+def test_renamed_uri_column_is_an_error_not_an_empty_person(tmp_path):
+    path = _zip_with(
+        tmp_path,
+        ratings="Date,Name,Year,URI,Rating\n2024-01-01,Alpha,1994,https://boxd.it/aaa,4\n",
+    )
+    with pytest.raises(ExportError, match="no Letterboxd URI column"):
+        load_person(path)
+
+
+def test_renamed_rating_column_is_an_error(tmp_path):
+    path = _zip_with(
+        tmp_path,
+        ratings="Date,Name,Year,Letterboxd URI,Stars\n"
+        "2024-01-01,Alpha,1994,https://boxd.it/aaa,4\n",
+    )
+    with pytest.raises(ExportError, match="no Rating column"):
+        load_person(path)
+
+
+def test_rows_without_any_boxd_link_are_an_error(tmp_path):
+    path = _zip_with(
+        tmp_path,
+        ratings="Date,Name,Year,Letterboxd URI,Rating\n"
+        "2024-01-01,Alpha,1994,https://letterboxd.com/film/alpha/,4\n",
+    )
+    with pytest.raises(ExportError, match="none of the 1 rows in ratings.csv"):
+        load_person(path)
+
+
+def test_the_same_check_applies_to_the_other_files(tmp_path):
+    good = "Date,Name,Year,Letterboxd URI,Rating\n2024-01-01,Alpha,1994,https://boxd.it/aaa,4\n"
+    path = _zip_with(
+        tmp_path,
+        ratings=good,
+        watched="Date,Name,Year,Link\n2024-01-01,Alpha,1994,https://boxd.it/aaa\n",
+    )
+    with pytest.raises(ExportError, match="watched.csv has no Letterboxd URI"):
+        load_person(path)
+
+
+def test_header_only_and_empty_files_are_fine(tmp_path):
+    """A person with an empty watchlist is normal, not a format change."""
+    header = "Date,Name,Year,Letterboxd URI\n"
+    path = _zip_with(
+        tmp_path,
+        ratings="Date,Name,Year,Letterboxd URI,Rating\n"
+        "2024-01-01,Alpha,1994,https://boxd.it/aaa,4\n",
+        watchlist=header,
+        watched="",
+    )
+    person = load_person(path)
+    assert person.has_watchlist is True
+    assert person.watchlist == {}
+    assert set(person.ratings) == {"aaa"}
+
+
+def test_some_unusable_rows_are_still_skipped(tmp_path):
+    """Only a file with no usable link at all is an error; one bad row is not."""
+    path = _zip_with(
+        tmp_path,
+        ratings="Date,Name,Year,Letterboxd URI,Rating\n"
+        "2024-01-01,Alpha,1994,https://boxd.it/aaa,4\n"
+        "2024-01-02,Odd,2000,https://example.com/odd,3\n",
+    )
+    assert load_person(path).ratings == {"aaa": 4.0}
+
+
 def test_a_single_person_is_rejected(tmp_path):
     folder = tmp_path / "exports"
     folder.mkdir()

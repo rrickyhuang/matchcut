@@ -124,7 +124,9 @@ def load_person(zip_path: Path) -> Person:
 
         ratings: dict[str, float] = {}
         rated_refs: dict[str, FilmRef] = {}
-        for row in _rows(archive, "ratings.csv"):
+        for row in _checked_rows(
+            archive, "ratings.csv", zip_path, (URI_COLUMN, RATING_COLUMN)
+        ):
             ref = _row_to_ref(row)
             rating = _parse_rating(row.get(RATING_COLUMN))
             if ref is None or rating is None:
@@ -135,7 +137,7 @@ def load_person(zip_path: Path) -> Person:
         watched: dict[str, FilmRef] = {}
         watched_dates: dict[str, str] = {}
         if "watched.csv" in names:
-            for row in _rows(archive, "watched.csv"):
+            for row in _checked_rows(archive, "watched.csv", zip_path, (URI_COLUMN,)):
                 ref = _row_to_ref(row)
                 if ref is None:
                     continue
@@ -149,7 +151,9 @@ def load_person(zip_path: Path) -> Person:
         has_watchlist = "watchlist.csv" in names
         watchlist: dict[str, FilmRef] = {}
         if has_watchlist:
-            for row in _rows(archive, "watchlist.csv"):
+            for row in _checked_rows(
+                archive, "watchlist.csv", zip_path, (URI_COLUMN,)
+            ):
                 ref = _row_to_ref(row)
                 if ref is not None:
                     watchlist[ref.boxd_id] = ref
@@ -187,6 +191,39 @@ def _rows(archive: zipfile.ZipFile, member: str):
     """Yield dict rows from a member CSV. Exports are UTF-8; tolerate a BOM."""
     raw = archive.read(member).decode("utf-8-sig", errors="replace")
     yield from csv.DictReader(io.StringIO(raw))
+
+
+def _checked_rows(
+    archive: zipfile.ZipFile,
+    member: str,
+    zip_path: Path,
+    required: tuple[str, ...],
+) -> list[dict[str, str]]:
+    """Rows of a member CSV, failing loudly when its format has changed.
+
+    Rows that cannot be used are skipped by the caller, which would turn a
+    renamed column or a new link format into a person with no films and no
+    error. So: a header missing a required column is an error, and so is a
+    file that has rows but not one `boxd.it` link. An empty file, or a header
+    with no rows, is fine.
+    """
+    raw = archive.read(member).decode("utf-8-sig", errors="replace")
+    reader = csv.DictReader(io.StringIO(raw))
+    if reader.fieldnames is None:
+        return []
+    absent = [column for column in required if column not in reader.fieldnames]
+    if absent:
+        raise ExportError(
+            f"{zip_path.name}: {member} has no {', '.join(absent)} column "
+            f"(found: {', '.join(reader.fieldnames)}). Has the export format changed?"
+        )
+    rows = list(reader)
+    if rows and not any(boxd_id_from_uri(row.get(URI_COLUMN)) for row in rows):
+        raise ExportError(
+            f"{zip_path.name}: none of the {len(rows)} rows in {member} has a "
+            f"boxd.it link in {URI_COLUMN!r}. Has the export format changed?"
+        )
+    return rows
 
 
 def boxd_id_from_uri(uri: str | None) -> str | None:
