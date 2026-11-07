@@ -127,3 +127,36 @@ def test_empty_folder_is_reported_clearly(tmp_path):
     folder.mkdir()
     with pytest.raises(ExportError, match="no export zips"):
         load_people(folder)
+
+
+def test_two_exports_for_one_person_are_rejected(exports_dir):
+    """A re-export left next to the old one would otherwise count as a third
+    person called ana."""
+    write_export(
+        exports_dir / "letterboxd-ana-2026-03-01-00-00-utc.zip", "ana", {"aaa": 4.0}
+    )
+    with pytest.raises(ExportError) as caught:
+        load_people(exports_dir)
+    message = str(caught.value)
+    assert "letterboxd-ana-2026-01-01-00-00-utc.zip" in message
+    assert "letterboxd-ana-2026-03-01-00-00-utc.zip" in message
+    assert "same person" in message
+
+
+def test_duplicate_labels_are_compared_case_insensitively(exports_dir):
+    write_export(exports_dir / "second.zip", "ANA", {"aaa": 4.0})
+    with pytest.raises(ExportError, match="same person"):
+        load_people(exports_dir)
+
+
+def test_a_duplicate_outside_the_people_filter_is_not_an_error(exports_dir):
+    """Only the selected people have to be unique."""
+    write_export(exports_dir / "cleo-1.zip", "cleo", {"aaa": 4.0})
+    write_export(exports_dir / "cleo-2.zip", "cleo", {"aaa": 4.0})
+    assert [p.label for p in load_people(exports_dir, only=["ana", "ben"])] == [
+        "ana",
+        "ben",
+    ]
+    with pytest.raises(ExportError, match="same person"):
+        load_people(exports_dir, only=["ana", "cleo"])
+
