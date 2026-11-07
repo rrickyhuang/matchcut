@@ -111,44 +111,51 @@ def _fetch_all(
     session.headers.update(HEADERS)
     refused_streak = 0
     last_request = 0.0
+    fetched = 0
 
-    for index, boxd_id in enumerate(todo, start=1):
-        wait = REQUEST_INTERVAL_SECONDS - (time.monotonic() - last_request)
-        if wait > 0:
-            time.sleep(wait)
-        last_request = time.monotonic()
+    # The `finally` is what makes "an interrupted run resumes from the cache"
+    # true: Ctrl-C or an unexpected error still saves what was fetched.
+    try:
+        for index, boxd_id in enumerate(todo, start=1):
+            wait = REQUEST_INTERVAL_SECONDS - (time.monotonic() - last_request)
+            if wait > 0:
+                time.sleep(wait)
+            last_request = time.monotonic()
 
-        try:
-            html = _get_with_backoff(session, boxd_id)
-        except Blocked:
-            refused_streak += 1
-            if refused_streak >= BLOCK_STREAK:
-                if progress:
-                    progress(
-                        f"  Letterboxd refused {BLOCK_STREAK} requests in a row; "
-                        f"stopping after {index - 1} of {len(todo)}"
-                    )
-                break
-            continue
-        except requests.RequestException as exc:
-            films[boxd_id] = FilmInfo(
-                boxd_id=boxd_id,
-                title=refs[boxd_id].title,
-                year=refs[boxd_id].year,
-                status=f"error: {type(exc).__name__}",
-            )
+            try:
+                html = _get_with_backoff(session, boxd_id)
+            except Blocked:
+                refused_streak += 1
+                if refused_streak >= BLOCK_STREAK:
+                    if progress:
+                        progress(
+                            f"  Letterboxd refused {BLOCK_STREAK} requests in a "
+                            f"row; stopping after {index - 1} of {len(todo)}"
+                        )
+                    break
+                continue
+            except requests.RequestException as exc:
+                films[boxd_id] = FilmInfo(
+                    boxd_id=boxd_id,
+                    title=refs[boxd_id].title,
+                    year=refs[boxd_id].year,
+                    status=f"error: {type(exc).__name__}",
+                )
+                refused_streak = 0
+                continue
+
             refused_streak = 0
-            continue
+            films[boxd_id] = parse_film_page(html, boxd_id, fallback=refs[boxd_id])
+            fetched += 1
 
-        refused_streak = 0
-        films[boxd_id] = parse_film_page(html, boxd_id, fallback=refs[boxd_id])
-
-        if index % SAVE_EVERY == 0 or index == len(todo):
-            save_cache(cache_path, films)
-            if progress:
-                progress(f"  enriched {index}/{len(todo)}")
-
-    save_cache(cache_path, films)
+            # Counted in films fetched, not position in `todo`, so refusals and
+            # errors in between do not push a save off its cadence.
+            if fetched % SAVE_EVERY == 0 or index == len(todo):
+                save_cache(cache_path, films)
+                if progress:
+                    progress(f"  enriched {index}/{len(todo)}")
+    finally:
+        save_cache(cache_path, films)
 
 
 def _get_with_backoff(session: requests.Session, boxd_id: str) -> str:
