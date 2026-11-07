@@ -133,12 +133,16 @@ def test_distribution_is_a_share_not_a_count(group):
 def test_agreement_falls_back_when_too_few_films_qualify(group):
     """Only 4 films are rated by everyone, under AGREEMENT_MIN_FILMS of 20.
 
-    With 2 people the fallback pool needs 3 raters and finds none, so the
-    report has to say the basis changed rather than show a wrong number.
+    The fallback wants 3 raters per film, which a pair cannot have, so it
+    asks for as many as the group has (2). Those are the same four films
+    (eee has one rater); each has spread 2.0, so the mean is 2.0. The basis
+    still reads as the fallback, so the report can say the sample is small.
     """
     agreement = group_agreement(group)
     assert agreement.basis == "three-plus"
-    assert agreement.films_counted == 0
+    assert agreement.min_raters == 2
+    assert agreement.films_counted == 4
+    assert agreement.mean_spread == 2.0
 
 
 def test_consensus_ranks_by_group_mean(group):
