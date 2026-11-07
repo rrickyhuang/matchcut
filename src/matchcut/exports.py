@@ -63,7 +63,8 @@ def load_people(exports_dir: Path, only: list[str] | None = None) -> list[Person
     if not zips:
         raise ExportError(f"no export zips in {exports_dir}")
 
-    people = [load_person(path) for path in zips]
+    loaded = [(path, load_person(path)) for path in zips]
+    people = [person for _, person in loaded]
 
     if only:
         wanted = {label.casefold() for label in only}
@@ -74,7 +75,10 @@ def load_people(exports_dir: Path, only: list[str] | None = None) -> list[Person
             raise ExportError(
                 f"no export for {', '.join(sorted(missing))}. Available: {available}"
             )
-        people = [p for p in people if p.label.casefold() in wanted]
+        loaded = [(path, p) for path, p in loaded if p.label.casefold() in wanted]
+        people = [person for _, person in loaded]
+
+    _reject_duplicate_labels(loaded)
 
     if len(people) < MIN_PEOPLE:
         raise ExportError(f"need at least {MIN_PEOPLE} people, got {len(people)}")
@@ -84,6 +88,24 @@ def load_people(exports_dir: Path, only: list[str] | None = None) -> list[Person
             f"up to {MAX_PEOPLE}. Use --people to pick a subset."
         )
     return people
+
+
+def _reject_duplicate_labels(loaded: list[tuple[Path, Person]]) -> None:
+    """Two zips with one label would be counted as two people.
+
+    Everything downstream is keyed by label, so a second export of the same
+    account (a re-export left beside the old one) would be silently merged or
+    ignored. Make the user choose which file to keep.
+    """
+    by_label: dict[str, list[str]] = {}
+    for path, person in loaded:
+        by_label.setdefault(person.label.casefold(), []).append(path.name)
+    for names in by_label.values():
+        if len(names) > 1:
+            raise ExportError(
+                f"{' and '.join(names)} are exports for the same person. "
+                "Keep one of them in the folder."
+            )
 
 
 def load_person(zip_path: Path) -> Person:
