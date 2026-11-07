@@ -14,6 +14,13 @@
   --muted: #6b6b6b;
   --mark: #3d3d3d;
   --mark-faint: #b4b4b4;
+  /* Correlation matrix: five steps, more ink = more alike, each with a text
+     colour that keeps 4.5:1 contrast on it. */
+  --heat-0: #f0f0f0; --heat-0-text: #1a1a1a;
+  --heat-1: #d4d4d4; --heat-1-text: #1a1a1a;
+  --heat-2: #a8a8a8; --heat-2-text: #1a1a1a;
+  --heat-3: #6e6e6e; --heat-3-text: #ffffff;
+  --heat-4: #3d3d3d; --heat-4-text: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -24,6 +31,11 @@
     --muted: #9a9a9a;
     --mark: #cfcfcf;
     --mark-faint: #4a4a4a;
+    --heat-0: #1d1d1d; --heat-0-text: #ededed;
+    --heat-1: #3a3a3a; --heat-1-text: #ededed;
+    --heat-2: #5e5e5e; --heat-2-text: #ededed;
+    --heat-3: #8f8f8f; --heat-3-text: #131313;
+    --heat-4: #cfcfcf; --heat-4-text: #131313;
   }
 }
 :root[data-theme="dark"] {
@@ -34,6 +46,11 @@
   --muted: #9a9a9a;
   --mark: #cfcfcf;
   --mark-faint: #4a4a4a;
+  --heat-0: #1d1d1d; --heat-0-text: #ededed;
+  --heat-1: #3a3a3a; --heat-1-text: #ededed;
+  --heat-2: #5e5e5e; --heat-2-text: #ededed;
+  --heat-3: #8f8f8f; --heat-3-text: #131313;
+  --heat-4: #cfcfcf; --heat-4-text: #131313;
 }
 body {
   margin: 0;
