@@ -8,7 +8,7 @@ reads export zips you already have, fetches public film pages for genre and
 language, and writes a single self-contained HTML file.
 
 > **Status: in development.** The command line, package layout and metric
-> definitions below are settled; the computation is still being built.
+> definitions below are settled.
 
 ## Install
 
@@ -99,6 +99,10 @@ and the share breakdowns. Ratings run 0.5 to 5 in half-star steps.
 | Decade share and average | The same, by release decade |
 | Language share | Share of watched films by **primary** language only, shown as English, other, and the top 5 other languages |
 
+With two people, "at least 2 others" cannot be met, so hot takes need 1 other
+rating instead. A hot take is then simply a disagreement, and the report says
+so.
+
 ### Sample sizes
 
 A number with too little behind it is misleading, so:
@@ -113,7 +117,8 @@ A number with too little behind it is misleading, so:
 
 **From friends' ratings**, per person: a film they have not watched that at
 least 2 other members rated, with a mean of 4.5 or higher. Ranked by mean
-rating, then by number of raters. Top 10 each.
+rating, then by number of raters. Top 10 each. With two people a film needs the
+other person's rating alone, and the report says which rule applied.
 
 **From watchlists**, for the group: a film on at least 2 members' watchlists
 that no member has watched. Ranked by how many watchlists it is on. Top 15.
