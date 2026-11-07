@@ -36,17 +36,11 @@ class FilmInfo:
     boxd_id: str
     title: str
     year: int | None
-    slug: str | None = None
     genres: list[str] = field(default_factory=list)
     primary_language: str | None = None
-    spoken_languages: list[str] = field(default_factory=list)
     tmdb_id: str | None = None
     status: str = "ok"
     fetched_at: str | None = None
-
-    @property
-    def decade(self) -> int | None:
-        return (self.year // 10) * 10 if self.year is not None else None
 
 
 @dataclass
