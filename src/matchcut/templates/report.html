@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% macro film_rows(lines, number_header, places=2) %}
+<table>
+  <thead><tr><th>Film</th><th>{{ number_header }}</th><th></th></tr></thead>
+  <tbody>
+    {% for line in lines %}
+    <tr>
+      <td>{{ line.title }}{% if line.year %} <span class="muted">({{ line.year }})</span>{% endif %}</td>
+      <td>{{ line.value | stars(places) }}</td>
+      <td class="muted">{{ line.detail }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% macro share_table(breakdown, labels, keys) %}
+<table>
+  <thead>
+    <tr>
+      <th>{{ caller() if caller else "Key" }}</th>
+      {% for label in labels %}<th>{{ label }} share</th><th>{{ label }} avg</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for key in keys %}
+    <tr>
+      <td>{{ key }}</td>
+      {% for label in labels %}
+        {% set row = breakdown.per_person[label] | selectattr("key", "equalto", key) | first %}
+        <td>{{ row.share | pct if row else "—" }}</td>
+        <td>{{ row.average | stars if row else "—" }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% block sections %}
+
+<section id="summary">
+  <h2>Summary</h2>
+  <p class="basis">Based on {{ total_films }} films across {{ labels | length }} libraries.</p>
+  <ul>
+    {% for fact in facts %}<li>{{ fact }}</li>{% endfor %}
+  </ul>
+</section>
+
+<section id="at-a-glance">
+  <h2>At a glance</h2>
+  <table>
+    <thead>
+      <tr><th>Person</th><th>Watched</th><th>Rated</th><th>Mean</th><th>Spread</th><th>5-star</th><th>Tilt</th></tr>
+    </thead>
+    <tbody>
+      {% for p in people %}
+      <tr>
+        <td>{{ p.label }}</td>
+        <td>{{ p.watched }}</td>
+        <td>{{ p.rated }}</td>
+        <td>{{ p.mean_rating | stars }}</td>
+        <td>{{ p.spread | stars }}</td>
+        <td>{{ p.five_star_count }}</td>
+        <td>{{ p.tilt | signed }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="flag">Tilt is a person's mean rating minus the others' mean, on films they share.</p>
+</section>
+
+<section id="who-rates-alike">
+  <h2>Who rates alike</h2>
+  <p class="basis">
+    {{ pairs | length }} pair{{ "" if pairs | length == 1 else "s" }}.
+    A pair under {{ thresholds.min_overlap }} shared ratings is marked low sample.
+  </p>
+  {% if matrix_svg %}
+  <figure>{{ matrix_svg | safe }}</figure>
+  {% endif %}
+  <table>
+    <thead>
+      <tr><th>Pair</th><th>Shared</th><th>Correlation</th><th>Mean gap</th><th>Within 0.5</th><th>Library overlap</th></tr>
+    </thead>
+    <tbody>
+      {% for pair in pairs %}
+      <tr>
+        <td>{{ pair.a }} &amp; {{ pair.b }}</td>
+        <td>{{ pair.shared }}{% if pair.low_sample %} <span class="flag">low sample</span>{% endif %}</td>
+        <td>{{ pair.correlation | stars }}</td>
+        <td>{{ pair.mean_abs_diff | stars }}</td>
+        <td>{{ pair.within_half_star | pct }}</td>
+        <td>{{ pair.library_overlap | pct }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section id="star-usage">
+  <h2>How each person uses the stars</h2>
+  {% for p in people %}
+  <h3>{{ p.label }}</h3>
+  <p class="basis">{{ p.rated }} ratings.</p>
+  <figure>{{ distribution_svg[p.label] | safe }}</figure>
+  {% endfor %}
+  <details>
+    <summary>Table version</summary>
+    <table>
+      <thead>
+        <tr><th>Stars</th>{% for p in people %}<th>{{ p.label }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for step in rating_steps %}
+        <tr>
+          <td>{{ "%g" | format(step) }}</td>
+          {% for p in people %}<td>{{ p.distribution[step] | pct(1) }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+<section id="agreement">
+  <h2>What everyone agrees on</h2>
+  <p class="basis">
+    {{ consensus.films_counted }} films every member rated.
+    Spread uses {{ agreement.films_counted }} films
+    {% if agreement.basis == "all" %}everyone rated{% else %}at least 3 members rated{% endif %},
+    averaging {{ agreement.mean_spread | stars }} stars apart.
+  </p>
+  <h3>Shared favorites</h3>
+  {{ film_rows(consensus.favorites, "Group mean") }}
+  <h3>Lowest rated</h3>
+  {{ film_rows(consensus.lowest, "Group mean") }}
+  <h3>Biggest splits</h3>
+  {{ film_rows(agreement.divisive, "Spread", 1) }}
+</section>
+
+<section id="hot-takes">
+  <h2>Hot takes</h2>
+  {% for label, take in takes.items() %}
+  <h3>{{ label }}</h3>
+  <p class="basis">
+    {{ take.candidates }} films rated by {{ label }} and at least
+    {{ take.min_others }} other{{ "" if take.min_others == 1 else "s" }}.
+    {% if take.min_others < 2 %}
+    <span class="flag">With two people a hot take is simply a disagreement.</span>
+    {% endif %}
+  </p>
+  <h4>Rates higher than the rest</h4>
+  {{ film_rows(take.above, "Gap", 1) }}
+  <h4>Rates lower than the rest</h4>
+  {{ film_rows(take.below, "Gap", 1) }}
+  {% endfor %}
+</section>
+
+<section id="genres">
+  <h2>Genres</h2>
+  <p class="basis">
+    Share of each person's watched films carrying a genre. A film can carry
+    several, so shares do not sum to 100%. An average is shown only at
+    {{ thresholds.min_group }} or more rated films.
+    {% if missing_enrichment %}
+    {{ missing_enrichment }} films have no genre data and are left out.
+    {% endif %}
+  </p>
+  {% for label in labels %}
+  {% set stats = people | selectattr("label", "equalto", label) | first %}
+  <h3>{{ label }}</h3>
+  <p class="basis">
+    {{ stats.watched - genres.skipped[label] }} of {{ stats.watched }} watched films
+    carry a genre.
+    {% if genres.skipped[label] %}
+    <span class="flag">The other {{ genres.skipped[label] }} are left out of these shares.</span>
+    {% endif %}
+  </p>
+  <figure>{{ genre_svg[label] | safe }}</figure>
+  {% endfor %}
+  <details open>
+    <summary>Table version</summary>
+    {% call share_table(genres, labels, genres.keys) %}Genre{% endcall %}
+  </details>
+</section>
+
+<section id="eras-and-languages">
+  <h2>Eras and languages</h2>
+
+  <h3>Decades</h3>
+  <p class="basis">By release year, which every export carries, so no film is missing here.</p>
+  {% for label in labels %}
+  <h4>{{ label }}</h4>
+  <figure>{{ decade_svg[label] | safe }}</figure>
+  {% endfor %}
+  <details open>
+    <summary>Table version</summary>
+    {% call share_table(decades, labels, decades.keys) %}Decade{% endcall %}
+  </details>
+
+  <h3>Languages</h3>
+  <p class="basis">
+    By primary language only, so a film counts once.
+    {% for label in labels %}
+      {% if languages.skipped[label] %}
+      <span class="flag">{{ languages.skipped[label] }} of {{ label }}'s films have no
+      language and are left out.</span>
+      {% endif %}
+    {% endfor %}
+  </p>
+  {% call share_table(languages, labels, languages.keys) %}Language{% endcall %}
+</section>
+
+<section id="calling-cards">
+  <h2>Calling cards</h2>
+  <p class="basis">5-star films nobody else in the group has watched, most recently logged first.</p>
+  {% for label, lines in cards.items() %}
+  <h3>{{ label }}</h3>
+  {% if lines %}
+  <ul>
+    {% for line in lines %}
+    <li>{{ line.title }}{% if line.year %} <span class="muted">({{ line.year }})</span>{% endif %}
+      <span class="muted">logged {{ line.detail }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">None: every 5-star film here has been seen by someone else.</p>
+  {% endif %}
+  {% endfor %}
+</section>
+
+<section id="watch-next">
+  <h2>Watch next</h2>
+
+  <h3>From each other's ratings</h3>
+  {% for label, picks in friend_picks.items() %}
+  <h4>{{ label }}</h4>
+  <p class="basis">
+    Unwatched films rated 4.5 or higher by at least
+    {{ picks.min_raters }} other{{ "" if picks.min_raters == 1 else "s" }}.
+    {{ picks.items | length }} shown.
+  </p>
+  {% if picks.items %}
+  <table>
+    <thead><tr><th>Film</th><th>Mean</th><th>Rated by</th></tr></thead>
+    <tbody>
+      {% for rec in picks.items %}
+      <tr>
+        <td>{{ rec.title }}{% if rec.year %} <span class="muted">({{ rec.year }})</span>{% endif %}</td>
+        <td>{{ rec.mean_rating | stars(1) }}</td>
+        <td class="muted">{{ rec.who | join(", ") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Nothing clears the bar.</p>
+  {% endif %}
+  {% endfor %}
+
+  <h3>From the watchlists</h3>
+  <p class="basis">
+    On at least 2 watchlists and watched by nobody. {{ watchlist_picks | length }} shown.
+    {% if no_watchlist %}
+    <span class="flag">No watchlist in the export for {{ no_watchlist | join(", ") }}.</span>
+    {% endif %}
+  </p>
+  {% if watchlist_picks %}
+  <table>
+    <thead><tr><th>Film</th><th>Watchlists</th><th>Who</th></tr></thead>
+    <tbody>
+      {% for rec in watchlist_picks %}
+      <tr>
+        <td>{{ rec.title }}{% if rec.year %} <span class="muted">({{ rec.year }})</span>{% endif %}</td>
+        <td>{{ rec.who | length }}</td>
+        <td class="muted">{{ rec.who | join(", ") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No film sits on two watchlists unwatched.</p>
+  {% endif %}
+</section>
+
+<footer class="basis">
+  Built by matchcut {{ version }}. Holds everyone's ratings, so keep it local.
+</footer>
+
+{% endblock %}

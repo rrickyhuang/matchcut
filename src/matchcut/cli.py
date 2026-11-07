@@ -78,12 +78,16 @@ def cmd_build(args: argparse.Namespace) -> int:
     thresholds = Thresholds(min_overlap=args.min_overlap, min_group=args.min_group)
 
     people = load_people(args.exports, only=args.people)
+    print(f"Loaded {len(people)}: {', '.join(p.label for p in people)}")
+
+    # Only watched films need enrichment. A watchlist pick is listed by title
+    # and year, both of which the export already carries.
     refs = {
-        boxd_id: ref
-        for person in people
-        for boxd_id, ref in {**person.watched, **person.watchlist}.items()
+        boxd_id: ref for person in people for boxd_id, ref in person.watched.items()
     }
-    films, missing = enrich(refs, args.cache, refresh=args.refresh_cache)
+    films, missing = enrich(
+        refs, args.cache, refresh=args.refresh_cache, progress=print
+    )
 
     group = Group(people=people, films=films)
     build_report(group, thresholds, missing, args.output)
@@ -95,12 +99,21 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .exports import ExportError
+
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except NotImplementedError as exc:
-        print(f"matchcut: not built yet ({exc.__class__.__name__})", file=sys.stderr)
-        return 2
+    except ExportError as exc:
+        print(f"matchcut: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print(
+            "\nmatchcut: stopped. Films already fetched stay cached, so the "
+            "next run resumes.",
+            file=sys.stderr,
+        )
+        return 130
 
 
 if __name__ == "__main__":

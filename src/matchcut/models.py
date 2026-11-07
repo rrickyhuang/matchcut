@@ -51,13 +51,15 @@ class FilmInfo:
 
 @dataclass
 class Person:
-    """One person's export, keyed by the zip file name without `.zip`."""
+    """One person's export, labelled by their Letterboxd username."""
 
     label: str
     ratings: dict[str, float] = field(default_factory=dict)
     watched: dict[str, FilmRef] = field(default_factory=dict)
     watchlist: dict[str, FilmRef] = field(default_factory=dict)
     has_watchlist: bool = False
+    #: boxd_id -> the date the film was logged, for "most recently logged".
+    watched_dates: dict[str, str] = field(default_factory=dict)
 
     @property
     def rated_ids(self) -> set[str]:
