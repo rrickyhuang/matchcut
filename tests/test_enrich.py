@@ -122,6 +122,32 @@ def test_cache_stores_only_ok_records(tmp_path, parsed):
     assert set(load_cache(path)) == {"zld0"}
 
 
+def test_saving_keeps_films_that_are_not_in_this_run(tmp_path, parsed):
+    """A run over a different group, or a blocked --refresh-cache run, only
+    knows about some films; saving must not delete the rest."""
+    path = tmp_path / "films.json"
+    other = FilmInfo(boxd_id="old1", title="Older", year=1990, genres=["Drama"])
+    save_cache(path, {"old1": other})
+    save_cache(path, {"zld0": parsed})
+    assert set(load_cache(path)) == {"old1", "zld0"}
+
+
+def test_saving_replaces_a_stored_record_with_a_new_ok_one(tmp_path, parsed):
+    path = tmp_path / "films.json"
+    stale = FilmInfo(boxd_id="zld0", title="Stale", year=2024)
+    save_cache(path, {"zld0": stale})
+    save_cache(path, {"zld0": parsed})
+    assert load_cache(path)["zld0"].title == "Challengers"
+
+
+def test_a_failed_refetch_does_not_erase_the_stored_record(tmp_path, parsed):
+    path = tmp_path / "films.json"
+    save_cache(path, {"zld0": parsed})
+    failed = FilmInfo(boxd_id="zld0", title="Nope", year=None, status="error: X")
+    save_cache(path, {"zld0": failed})
+    assert load_cache(path)["zld0"] == parsed
+
+
 def test_missing_cache_is_empty_not_an_error(tmp_path):
     assert load_cache(tmp_path / "absent.json") == {}
 
