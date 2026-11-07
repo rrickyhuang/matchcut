@@ -121,20 +121,8 @@ class Breakdown:
 # --------------------------------------------------------------------------
 
 
-def _title(group: Group, boxd_id: str) -> tuple[str, int | None]:
-    """Prefer the enriched title, fall back to whatever an export called it."""
-    info = group.films.get(boxd_id)
-    if info is not None and info.title:
-        return info.title, info.year
-    for person in group.people:
-        ref = person.watched.get(boxd_id) or person.watchlist.get(boxd_id)
-        if ref is not None:
-            return ref.title, ref.year
-    return boxd_id, None
-
-
 def _line(group: Group, boxd_id: str, value: float | None, detail: str = "") -> FilmLine:
-    title, year = _title(group, boxd_id)
+    title, year = group.title_of(boxd_id)
     return FilmLine(boxd_id=boxd_id, title=title, year=year, value=value, detail=detail)
 
 
