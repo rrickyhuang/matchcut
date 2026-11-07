@@ -25,9 +25,9 @@ that person's label in the report:
 
 ```
 exports/
-  ricky.zip
-  amber.zip
-  lenclipse.zip
+  john.zip
+  amy.zip
+  sara.zip
 ```
 
 Then build:
@@ -45,16 +45,12 @@ matchcut build ./exports -o report.html
 | `--cache PATH` | Film enrichment cache. Default `cache/films.json` |
 | `--refresh-cache` | Re-fetch film pages instead of using the cache |
 
-The report holds everyone's ratings, so treat it as a local file. Whether to
-share it is your call, not the tool's.
-
 ## Getting a Letterboxd export
 
 Each person does this once, on their own account:
 
 1. Letterboxd → **Settings** → **Data** → **Export your data**.
-2. Letterboxd emails a zip, or downloads it directly.
-3. Send it over and drop it in `exports/` named after them.
+2. Drop the .zip file in `exports/` named after them.
 
 `matchcut` reads three files from the zip:
 
@@ -78,9 +74,6 @@ language and TMDB id off the public film page, and caches the result in
 - If Letterboxd starts refusing requests, the run stops and builds a **partial
   report**, which says how many films lack genre and language data and leaves
   them out of those sections only.
-
-For reference, four libraries came to 1,152 unique films — about 20 minutes on
-a first run, and seconds on every run after.
 
 No profile pages are fetched, and no private notes, diary entries or review
 text are read.
@@ -127,8 +120,7 @@ that no member has watched. Ranked by how many watchlists it is on. Top 15.
 
 ## The report
 
-One HTML file that makes no external requests — no fonts, no scripts, no
-images fetched when you open it. Plain grayscale, with light and dark handled
+One HTML file that makes no external requests when you open it. Plain grayscale, with light and dark handled
 by CSS color tokens. Every chart is inline SVG and has a table version beside
 it. All wording is generated from fixed templates and thresholds, so the same
 exports always produce the same sentences.
@@ -152,9 +144,5 @@ answers. Film-page parsing is tested against a saved page in
 `tests/fixtures/`, never against the live site.
 
 ## Prior art
-
-Other people have built adjacent things: BoxdBlend (pairs, closed source),
-Letterboxd Friends Ranker, lttrpy (MIT) and BoxdBuddies (AGPL-3.0). No code is taken from any project without an
-open-source license.
 
 `matchcut` is not affiliated with Letterboxd.
