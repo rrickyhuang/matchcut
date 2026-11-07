@@ -20,14 +20,17 @@ python -m pip install -e ".[dev]"
 
 ## Use
 
-Put one export zip per person in a folder. The file name without `.zip` becomes
-that person's label in the report:
+Put one export zip per person in a folder. A person's label in the report, and
+the name `--people` matches, is their Letterboxd username from `profile.csv`
+inside the zip. If that is missing it comes from the `letterboxd-<username>-…`
+file name, and failing that from the file name without `.zip`. Every normal
+export has a `profile.csv`, so renaming a zip does not change the label:
 
 ```
 exports/
-  john.zip
-  amy.zip
-  sara.zip
+  letterboxd-john-2026-01-01-12-00-utc.zip
+  letterboxd-amy-2026-01-03-09-30-utc.zip
+  letterboxd-sara-2026-01-02-18-45-utc.zip
 ```
 
 Then build:
@@ -50,7 +53,7 @@ matchcut build ./exports -o report.html
 Each person does this once, on their own account:
 
 1. Letterboxd → **Settings** → **Data** → **Export your data**.
-2. Drop the .zip file in `exports/` named after them.
+2. Drop the .zip file in `exports/` as it is; there is no need to rename it.
 
 `matchcut` reads three files from the zip:
 
