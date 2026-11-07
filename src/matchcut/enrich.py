@@ -343,17 +343,20 @@ def load_cache(cache_path: Path) -> dict[str, FilmInfo]:
 
 
 def save_cache(cache_path: Path, films: dict[str, FilmInfo]) -> None:
-    """Write the cache atomically, so an interrupt cannot truncate it.
+    """Merge `films` into the cache on disk, writing atomically.
 
-    Only `ok` records are stored: a failure is worth retrying next run.
+    Only `ok` records are stored: a failure is worth retrying next run. Films
+    already on disk that are not in `films` are kept, so a run over a smaller
+    or different group, or a `--refresh-cache` run that is blocked part-way,
+    never shrinks the cache. A new `ok` record replaces the stored one.
     """
     cache_path.parent.mkdir(parents=True, exist_ok=True)
+    merged = load_cache(cache_path)
+    merged.update({i: info for i, info in films.items() if info.status == "ok"})
     payload = {
         "version": 1,
         "films": {
-            boxd_id: asdict(info)
-            for boxd_id, info in sorted(films.items())
-            if info.status == "ok"
+            boxd_id: asdict(info) for boxd_id, info in sorted(merged.items())
         },
     }
     temp = cache_path.with_suffix(cache_path.suffix + ".tmp")
