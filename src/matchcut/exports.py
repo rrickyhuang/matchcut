@@ -1,47 +1,202 @@
 """Read Letterboxd export zips into `Person` records.
 
-One zip per person. The file name without `.zip` becomes the person's label.
+One zip per person. Column names below are confirmed against real exports
+(Nov 2026): the files are UTF-8 with no BOM, and titles can carry en dashes and
+non-breaking spaces, so nothing here re-encodes a title.
 
 Read from each zip:
-  ratings.csv    date, name, year, Letterboxd URI, rating
-  watched.csv    date, name, year, Letterboxd URI
-  watchlist.csv  date, name, year, Letterboxd URI  (optional)
+  profile.csv    Date Joined, Username, Given Name, ...   (label only)
+  ratings.csv    Date, Name, Year, Letterboxd URI, Rating
+  watched.csv    Date, Name, Year, Letterboxd URI
+  watchlist.csv  Date, Name, Year, Letterboxd URI         (optional)
 
-The column names above come from the documented standard export. Confirm them
-against a real export before trusting this parser, and keep the column lookup
-in `_row_to_ref` so there is one place to fix.
+Column lookup is confined to the constants below and `_row_to_ref`, so a change
+in the export format has one place to fix.
 
 Only ratings matter for similarity; unrated watched films are ignored there.
 """
 
 from __future__ import annotations
 
+import csv
+import io
+import re
+import zipfile
 from pathlib import Path
 
 from .models import FilmRef, Person
 
-#: Column that holds the `https://boxd.it/<id>` short link.
 URI_COLUMN = "Letterboxd URI"
+NAME_COLUMN = "Name"
+YEAR_COLUMN = "Year"
+DATE_COLUMN = "Date"
+RATING_COLUMN = "Rating"
+USERNAME_COLUMN = "Username"
+
+MIN_PEOPLE = 2
+#: Beyond this the pair table and the correlation matrix stop being readable.
+MAX_PEOPLE = 6
+
+#: `https://boxd.it/<id>` -- the short link every export row carries.
+_BOXD_RE = re.compile(r"boxd\.it/([A-Za-z0-9]+)")
+
+#: Letterboxd names its exports `letterboxd-<username>-<date>-utc.zip`.
+_EXPORT_NAME_RE = re.compile(
+    r"^letterboxd-(?P<user>.+?)-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-utc$", re.IGNORECASE
+)
+
+
+class ExportError(Exception):
+    """An export zip could not be used."""
 
 
 def load_people(exports_dir: Path, only: list[str] | None = None) -> list[Person]:
     """Load every `*.zip` in `exports_dir`, optionally limited to `only` labels.
 
-    Raises if a requested label has no zip, or if fewer than 2 people load.
+    Labels are matched case-insensitively. Raises `ExportError` if the folder is
+    missing, if a requested label has no zip, or if the group is the wrong size.
     """
-    raise NotImplementedError
+    if not exports_dir.is_dir():
+        raise ExportError(f"no such exports folder: {exports_dir}")
+
+    zips = sorted(exports_dir.glob("*.zip"))
+    if not zips:
+        raise ExportError(f"no export zips in {exports_dir}")
+
+    people = [load_person(path) for path in zips]
+
+    if only:
+        wanted = {label.casefold() for label in only}
+        found = {p.label.casefold() for p in people}
+        missing = wanted - found
+        if missing:
+            available = ", ".join(sorted(p.label for p in people))
+            raise ExportError(
+                f"no export for {', '.join(sorted(missing))}. Available: {available}"
+            )
+        people = [p for p in people if p.label.casefold() in wanted]
+
+    if len(people) < MIN_PEOPLE:
+        raise ExportError(f"need at least {MIN_PEOPLE} people, got {len(people)}")
+    if len(people) > MAX_PEOPLE:
+        raise ExportError(
+            f"{len(people)} people; the pair table and matrix only stay readable "
+            f"up to {MAX_PEOPLE}. Use --people to pick a subset."
+        )
+    return people
 
 
 def load_person(zip_path: Path) -> Person:
-    """Read one export zip."""
-    raise NotImplementedError
+    """Read one export zip into a `Person`."""
+    try:
+        archive = zipfile.ZipFile(zip_path)
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise ExportError(f"{zip_path.name}: not a readable zip ({exc})") from exc
+
+    with archive:
+        names = set(archive.namelist())
+        label = _label_for(archive, names, zip_path)
+
+        if "ratings.csv" not in names:
+            raise ExportError(f"{zip_path.name}: no ratings.csv")
+
+        ratings: dict[str, float] = {}
+        rated_refs: dict[str, FilmRef] = {}
+        for row in _rows(archive, "ratings.csv"):
+            ref = _row_to_ref(row)
+            rating = _parse_rating(row.get(RATING_COLUMN))
+            if ref is None or rating is None:
+                continue
+            ratings[ref.boxd_id] = rating
+            rated_refs[ref.boxd_id] = ref
+
+        watched: dict[str, FilmRef] = {}
+        watched_dates: dict[str, str] = {}
+        if "watched.csv" in names:
+            for row in _rows(archive, "watched.csv"):
+                ref = _row_to_ref(row)
+                if ref is None:
+                    continue
+                watched[ref.boxd_id] = ref
+                watched_dates[ref.boxd_id] = (row.get(DATE_COLUMN) or "").strip()
+
+        # A rated film is watched by definition, even if watched.csv lags.
+        for boxd_id, ref in rated_refs.items():
+            watched.setdefault(boxd_id, ref)
+
+        has_watchlist = "watchlist.csv" in names
+        watchlist: dict[str, FilmRef] = {}
+        if has_watchlist:
+            for row in _rows(archive, "watchlist.csv"):
+                ref = _row_to_ref(row)
+                if ref is not None:
+                    watchlist[ref.boxd_id] = ref
+
+    return Person(
+        label=label,
+        ratings=ratings,
+        watched=watched,
+        watchlist=watchlist,
+        has_watchlist=has_watchlist,
+        watched_dates=watched_dates,
+    )
 
 
-def boxd_id_from_uri(uri: str) -> str | None:
+def _label_for(archive: zipfile.ZipFile, names: set[str], zip_path: Path) -> str:
+    """Prefer the Letterboxd username, then the export file name, then the stem.
+
+    Letterboxd names exports `letterboxd-<user>-<date>-utc.zip`, so the raw
+    stem makes a terrible report label.
+    """
+    if "profile.csv" in names:
+        for row in _rows(archive, "profile.csv"):
+            username = (row.get(USERNAME_COLUMN) or "").strip()
+            if username:
+                return username
+            break
+
+    match = _EXPORT_NAME_RE.match(zip_path.stem)
+    if match:
+        return match.group("user")
+    return zip_path.stem
+
+
+def _rows(archive: zipfile.ZipFile, member: str):
+    """Yield dict rows from a member CSV. Exports are UTF-8; tolerate a BOM."""
+    raw = archive.read(member).decode("utf-8-sig", errors="replace")
+    yield from csv.DictReader(io.StringIO(raw))
+
+
+def boxd_id_from_uri(uri: str | None) -> str | None:
     """Pull the short id out of a `boxd.it` URI, or None if it is not one."""
-    raise NotImplementedError
+    if not uri:
+        return None
+    match = _BOXD_RE.search(uri)
+    return match.group(1) if match else None
+
+
+def _parse_rating(value: str | None) -> float | None:
+    """Ratings run 0.5 to 5 in half-star steps. Anything else is dropped."""
+    if not value:
+        return None
+    try:
+        rating = float(value)
+    except ValueError:
+        return None
+    if not (0.5 <= rating <= 5.0) or (rating * 2) % 1 != 0:
+        return None
+    return rating
 
 
 def _row_to_ref(row: dict[str, str]) -> FilmRef | None:
     """Turn one CSV row into a `FilmRef`, or None when the URI is unusable."""
-    raise NotImplementedError
+    boxd_id = boxd_id_from_uri(row.get(URI_COLUMN))
+    if boxd_id is None:
+        return None
+    year_raw = (row.get(YEAR_COLUMN) or "").strip()
+    year = int(year_raw) if year_raw.isdigit() else None
+    return FilmRef(
+        boxd_id=boxd_id,
+        title=(row.get(NAME_COLUMN) or "").strip() or boxd_id,
+        year=year,
+    )
