@@ -8,7 +8,7 @@ reads export zips you already have, fetches public film pages for genre and
 language, and writes a single self-contained HTML file.
 
 > **Status: in development.** The command line, package layout and metric
-> definitions below are settled; the computation is still being built.
+> definitions below are settled.
 
 ## Install
 
@@ -20,14 +20,17 @@ python -m pip install -e ".[dev]"
 
 ## Use
 
-Put one export zip per person in a folder. The file name without `.zip` becomes
-that person's label in the report:
+Put one export zip per person in a folder. A person's label in the report, and
+the name `--people` matches, is their Letterboxd username from `profile.csv`
+inside the zip. If that is missing it comes from the `letterboxd-<username>-…`
+file name, and failing that from the file name without `.zip`. Every normal
+export has a `profile.csv`, so renaming a zip does not change the label:
 
 ```
 exports/
-  john.zip
-  amy.zip
-  sara.zip
+  letterboxd-john-2026-01-01-12-00-utc.zip
+  letterboxd-amy-2026-01-03-09-30-utc.zip
+  letterboxd-sara-2026-01-02-18-45-utc.zip
 ```
 
 Then build:
@@ -50,13 +53,14 @@ matchcut build ./exports -o report.html
 Each person does this once, on their own account:
 
 1. Letterboxd → **Settings** → **Data** → **Export your data**.
-2. Drop the .zip file in `exports/` named after them.
+2. Drop the .zip file in `exports/` as it is; there is no need to rename it.
 
-`matchcut` reads three files from the zip:
+`matchcut` reads four files from the zip:
 
 - `ratings.csv` — the ratings every similarity number is built on
 - `watched.csv` — the watched library, used for overlap and share breakdowns
 - `watchlist.csv` — optional; only the group watchlist recommendations use it
+- `profile.csv` — only the username, which becomes the person's label
 
 Films are matched on the `boxd.it` short link in the export, never on title, so
 re-releases and alternate titles do not split into two films. Someone without a
@@ -99,6 +103,10 @@ and the share breakdowns. Ratings run 0.5 to 5 in half-star steps.
 | Decade share and average | The same, by release decade |
 | Language share | Share of watched films by **primary** language only, shown as English, other, and the top 5 other languages |
 
+With two people, "at least 2 others" cannot be met, so hot takes need 1 other
+rating instead. A hot take is then simply a disagreement, and the report says
+so.
+
 ### Sample sizes
 
 A number with too little behind it is misleading, so:
@@ -113,7 +121,8 @@ A number with too little behind it is misleading, so:
 
 **From friends' ratings**, per person: a film they have not watched that at
 least 2 other members rated, with a mean of 4.5 or higher. Ranked by mean
-rating, then by number of raters. Top 10 each.
+rating, then by number of raters. Top 10 each. With two people a film needs the
+other person's rating alone, and the report says which rule applied.
 
 **From watchlists**, for the group: a film on at least 2 members' watchlists
 that no member has watched. Ranked by how many watchlists it is on. Top 15.
