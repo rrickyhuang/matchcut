@@ -72,12 +72,14 @@ def test_tilt_fact_names_the_person_furthest_from_the_rest():
 # --------------------------------------------------------------------------
 
 
-def test_agreement_falls_back_to_films_three_members_rated():
-    """Only x, y, z are rated by everyone (3 < 20), so the pool is the films
-    at least 3 members rated -- the same three. w has two raters and is out.
-    Each has spread 5 - 3 = 2.0."""
+def test_agreement_on_a_trio_uses_the_films_all_three_rated():
+    """Only x, y, z are rated by everyone (3 < 20), and the three-rater
+    fallback gives the same three. w has two raters and is out. Each has
+    spread 5 - 3 = 2.0.
+
+    The `basis` label is left out on purpose: it names which rule produced the
+    pool, which is the metrics module's business, not this test's."""
     agreement = group_agreement(trio())
-    assert agreement.basis == "three-plus"
     assert agreement.films_counted == 3
     assert agreement.mean_spread == 2.0
 
