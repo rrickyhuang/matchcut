@@ -235,3 +235,13 @@ def test_a_duplicate_outside_the_people_filter_is_not_an_error(exports_dir):
     with pytest.raises(ExportError, match="same person"):
         load_people(exports_dir, only=["ana", "cleo"])
 
+
+
+def test_a_byte_order_mark_does_not_hide_the_first_column(tmp_path):
+    """The BOM sits on the first header; it must be stripped for the column
+    check and for reading rows alike."""
+    path = _zip_with(
+        tmp_path,
+        ratings="﻿Letterboxd URI,Rating,Name\nhttps://boxd.it/aaa,4,Alpha\n",
+    )
+    assert load_person(path).ratings == {"aaa": 4.0}

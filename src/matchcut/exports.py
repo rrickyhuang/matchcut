@@ -187,10 +187,18 @@ def _label_for(archive: zipfile.ZipFile, names: set[str], zip_path: Path) -> str
     return zip_path.stem
 
 
-def _rows(archive: zipfile.ZipFile, member: str):
-    """Yield dict rows from a member CSV. Exports are UTF-8; tolerate a BOM."""
+def _reader(archive: zipfile.ZipFile, member: str) -> csv.DictReader:
+    """A DictReader over a member CSV. Exports are UTF-8; tolerate a BOM.
+
+    The one place a member is decoded, so every file is read the same way.
+    """
     raw = archive.read(member).decode("utf-8-sig", errors="replace")
-    yield from csv.DictReader(io.StringIO(raw))
+    return csv.DictReader(io.StringIO(raw))
+
+
+def _rows(archive: zipfile.ZipFile, member: str):
+    """Yield dict rows from a member CSV."""
+    yield from _reader(archive, member)
 
 
 def _checked_rows(
@@ -207,8 +215,7 @@ def _checked_rows(
     file that has rows but not one `boxd.it` link. An empty file, or a header
     with no rows, is fine.
     """
-    raw = archive.read(member).decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(raw))
+    reader = _reader(archive, member)
     if reader.fieldnames is None:
         return []
     absent = [column for column in required if column not in reader.fieldnames]
