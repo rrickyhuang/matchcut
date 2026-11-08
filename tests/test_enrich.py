@@ -34,9 +34,8 @@ def test_title_is_the_film_not_the_site(parsed):
     assert parsed.title == "Challengers"
 
 
-def test_year_and_slug(parsed):
+def test_year(parsed):
     assert parsed.year == 2024
-    assert parsed.slug == "challengers"
 
 
 def test_genres_exclude_themes(parsed):
@@ -48,7 +47,6 @@ def test_primary_language_is_not_the_spoken_list(parsed):
     """A film counts under its primary language only, so Romanian must not
     become this film's language."""
     assert parsed.primary_language == "English"
-    assert parsed.spoken_languages == ["English", "Romanian"]
 
 
 def test_tmdb_id_comes_off_the_body_tag(parsed):
@@ -58,10 +56,6 @@ def test_tmdb_id_comes_off_the_body_tag(parsed):
 def test_parsed_page_is_ok_and_stamped(parsed):
     assert parsed.status == "ok"
     assert parsed.fetched_at is not None
-
-
-def test_decade_is_derived_from_the_year(parsed):
-    assert parsed.decade == 2020
 
 
 def test_unrecognisable_page_still_yields_a_record():
@@ -75,6 +69,30 @@ def test_unrecognisable_page_still_yields_a_record():
     assert info.year == 1999
     assert info.genres == []
     assert info.primary_language is None
+    # Nothing on the page is a film page, so it must not count as parsed.
+    assert info.status == "unparsed"
+
+
+def test_film_with_no_genres_is_still_ok():
+    """A real film page can list no genres; it is ok as long as the page still
+    has one of the panels the data comes from."""
+    info = parse_film_page(
+        '<html><body><h1 class="primaryname">Obscure</h1>'
+        '<div id="tab-panel-details"></div></body></html>',
+        "xxxx",
+    )
+    assert info.status == "ok"
+    assert info.genres == []
+
+
+def test_a_title_without_either_panel_is_unparsed():
+    """If the panel ids change but the title survives, the data is gone: a
+    half-parsed page must not be cached as ok with empty genres and language."""
+    info = parse_film_page(
+        '<html><body><h1 class="primaryname">Obscure</h1></body></html>',
+        "xxxx",
+    )
+    assert info.status == "unparsed"
 
 
 def test_cache_round_trip(tmp_path, parsed):
@@ -90,6 +108,63 @@ def test_cache_stores_only_ok_records(tmp_path, parsed):
     failed = FilmInfo(boxd_id="bad1", title="Nope", year=None, status="missing")
     save_cache(path, {"zld0": parsed, "bad1": failed})
     assert set(load_cache(path)) == {"zld0"}
+
+
+def test_saving_keeps_films_that_are_not_in_this_run(tmp_path, parsed):
+    """A run over a different group, or a blocked --refresh-cache run, only
+    knows about some films; saving must not delete the rest."""
+    path = tmp_path / "films.json"
+    other = FilmInfo(boxd_id="old1", title="Older", year=1990, genres=["Drama"])
+    save_cache(path, {"old1": other})
+    save_cache(path, {"zld0": parsed})
+    assert set(load_cache(path)) == {"old1", "zld0"}
+
+
+def test_saving_replaces_a_stored_record_with_a_new_ok_one(tmp_path, parsed):
+    path = tmp_path / "films.json"
+    stale = FilmInfo(boxd_id="zld0", title="Stale", year=2024)
+    save_cache(path, {"zld0": stale})
+    save_cache(path, {"zld0": parsed})
+    assert load_cache(path)["zld0"].title == "Challengers"
+
+
+def test_a_failed_refetch_does_not_erase_the_stored_record(tmp_path, parsed):
+    path = tmp_path / "films.json"
+    save_cache(path, {"zld0": parsed})
+    failed = FilmInfo(boxd_id="zld0", title="Nope", year=None, status="error: X")
+    save_cache(path, {"zld0": failed})
+    assert load_cache(path)["zld0"] == parsed
+
+
+def test_a_cache_written_with_the_old_fields_still_loads(tmp_path):
+    """Caches from before `slug` and `spoken_languages` were dropped hold
+    hours of fetching; they must keep working, not be skipped as unreadable."""
+    path = tmp_path / "films.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "films": {
+                    "zld0": {
+                        "boxd_id": "zld0",
+                        "title": "Challengers",
+                        "year": 2024,
+                        "slug": "challengers",
+                        "genres": ["Romance", "Drama"],
+                        "primary_language": "English",
+                        "spoken_languages": ["English", "Romanian"],
+                        "tmdb_id": "937287",
+                        "status": "ok",
+                        "fetched_at": "2026-11-01T00:00:00Z",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_cache(path)
+    assert loaded["zld0"].genres == ["Romance", "Drama"]
+    assert loaded["zld0"].primary_language == "English"
 
 
 def test_missing_cache_is_empty_not_an_error(tmp_path):

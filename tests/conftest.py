@@ -131,7 +131,6 @@ def films() -> dict[str, FilmInfo]:
             year=year,
             genres=list(genres),
             primary_language=language,
-            spoken_languages=[language],
             status="ok",
         )
         for boxd_id, (title, year, genres, language) in FILMS.items()

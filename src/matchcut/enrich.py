@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,7 +51,6 @@ HEADERS = {
 
 #: Headings in the film page's details panel, which is where languages live.
 PRIMARY_LANGUAGE_HEADINGS = ("primary language", "language")
-SPOKEN_LANGUAGE_HEADINGS = ("spoken languages", "languages")
 
 #: Flush the cache this often, so an interrupted run loses almost nothing.
 SAVE_EVERY = 25
@@ -71,7 +70,10 @@ def enrich(
 
     A non-zero second value means the report must declare itself partial.
     """
-    cached = {} if refresh else load_cache(cache_path)
+    # Read once. `stored` is what is on disk, and is kept in step with it as the
+    # run saves; `cached` is the part of it this run may reuse.
+    stored = load_cache(cache_path)
+    cached = {} if refresh else stored
     films: dict[str, FilmInfo] = {
         boxd_id: info
         for boxd_id, info in cached.items()
@@ -85,7 +87,7 @@ def enrich(
             f"(about {len(todo) * REQUEST_INTERVAL_SECONDS / 60:.0f} min)"
         )
     if todo:
-        _fetch_all(todo, refs, films, cache_path, progress)
+        _fetch_all(todo, refs, films, cache_path, stored, progress)
 
     # Films never fetched, or whose fetch failed, still need a record so the
     # report can count them and leave them out of the right sections.
@@ -104,51 +106,81 @@ def _fetch_all(
     refs: dict[str, FilmRef],
     films: dict[str, FilmInfo],
     cache_path: Path,
+    stored: dict[str, FilmInfo],
     progress=None,
 ) -> None:
-    """Fetch each id in `todo`, stopping early if Letterboxd starts refusing."""
+    """Fetch each id in `todo`, stopping early if Letterboxd starts refusing.
+
+    `stored` is the cache as read from disk; every save merges into it in
+    place, so the file is never decoded again during the run.
+    """
     session = requests.Session()
     session.headers.update(HEADERS)
     refused_streak = 0
     last_request = 0.0
+    fetched = 0
 
-    for index, boxd_id in enumerate(todo, start=1):
-        wait = REQUEST_INTERVAL_SECONDS - (time.monotonic() - last_request)
-        if wait > 0:
-            time.sleep(wait)
-        last_request = time.monotonic()
+    # The `finally` is what makes "an interrupted run resumes from the cache"
+    # true: Ctrl-C or an unexpected error still saves what was fetched.
+    try:
+        for index, boxd_id in enumerate(todo, start=1):
+            wait = REQUEST_INTERVAL_SECONDS - (time.monotonic() - last_request)
+            if wait > 0:
+                time.sleep(wait)
+            last_request = time.monotonic()
 
-        try:
-            html = _get_with_backoff(session, boxd_id)
-        except Blocked:
-            refused_streak += 1
-            if refused_streak >= BLOCK_STREAK:
-                if progress:
-                    progress(
-                        f"  Letterboxd refused {BLOCK_STREAK} requests in a row; "
-                        f"stopping after {index - 1} of {len(todo)}"
-                    )
-                break
-            continue
-        except requests.RequestException as exc:
-            films[boxd_id] = FilmInfo(
-                boxd_id=boxd_id,
-                title=refs[boxd_id].title,
-                year=refs[boxd_id].year,
-                status=f"error: {type(exc).__name__}",
-            )
+            try:
+                html = _get_with_backoff(session, boxd_id)
+            except Blocked:
+                refused_streak += 1
+                if refused_streak >= BLOCK_STREAK:
+                    if progress:
+                        progress(
+                            f"  Letterboxd refused {BLOCK_STREAK} requests in a "
+                            f"row; stopping after {index - 1} of {len(todo)}"
+                        )
+                    break
+                continue
+            except requests.RequestException as exc:
+                films[boxd_id] = FilmInfo(
+                    boxd_id=boxd_id,
+                    title=refs[boxd_id].title,
+                    year=refs[boxd_id].year,
+                    status=f"error: {type(exc).__name__}",
+                )
+                refused_streak = 0
+                continue
+
+            info = parse_film_page(html, boxd_id, fallback=refs[boxd_id])
+            films[boxd_id] = info
+            if info.status != "ok":
+                # A block can answer 200 with a challenge or consent page, and
+                # a layout change looks the same. Either way the next requests
+                # will fail too, so these count with 403/429 toward the stop.
+                refused_streak += 1
+                if refused_streak >= BLOCK_STREAK:
+                    if progress:
+                        progress(
+                            f"  Letterboxd returned {BLOCK_STREAK} pages in a "
+                            f"row that are not film pages; stopping after "
+                            f"{index} of {len(todo)}"
+                        )
+                    break
+                continue
+
             refused_streak = 0
-            continue
+            fetched += 1
 
-        refused_streak = 0
-        films[boxd_id] = parse_film_page(html, boxd_id, fallback=refs[boxd_id])
-
-        if index % SAVE_EVERY == 0 or index == len(todo):
-            save_cache(cache_path, films)
-            if progress:
-                progress(f"  enriched {index}/{len(todo)}")
-
-    save_cache(cache_path, films)
+            # Counted in films fetched, not position in `todo`, so refusals and
+            # errors in between do not push a save off its cadence.
+            if fetched % SAVE_EVERY == 0:
+                save_cache(cache_path, films, stored)
+                if progress:
+                    progress(f"  enriched {index}/{len(todo)}")
+    finally:
+        save_cache(cache_path, films, stored)
+    if progress:
+        progress(f"  fetched {fetched} of {len(todo)}")
 
 
 def _get_with_backoff(session: requests.Session, boxd_id: str) -> str:
@@ -192,16 +224,24 @@ def _get_with_backoff(session: requests.Session, boxd_id: str) -> str:
 def parse_film_page(
     html: str, boxd_id: str, fallback: FilmRef | None = None
 ) -> FilmInfo:
-    """Pull title, year, slug, genres, languages and TMDB id out of a page.
+    """Pull title, year, genres, primary language and TMDB id out of a page.
 
     Tested against `tests/fixtures/film_page.html`, never the live site.
+
+    Genres and languages come from the two panels, so a page with neither (a
+    consent or bot-challenge page, or a layout change that renames them even
+    if the title survives) comes back with status "unparsed". It is counted as
+    missing and never cached as if it were a film with no genres. A page with
+    either panel is ok, since a film can list no genres at all.
     """
     soup = BeautifulSoup(html, "html.parser")
+    recognised = bool(
+        soup.find(id="tab-panel-genres") or soup.find(id="tab-panel-details")
+    )
 
     body = soup.find("body")
     tmdb_id = body.get("data-tmdb-id") if body else None
 
-    slug = _parse_slug(soup)
     title, year = _parse_title_year(soup)
     if fallback is not None:
         title = title or fallback.title
@@ -209,34 +249,17 @@ def parse_film_page(
 
     genres = _slug_list(soup, "tab-panel-genres", "Genres", "/films/genre/")
     primary = _primary_language(soup)
-    spoken = _language_list(soup, SPOKEN_LANGUAGE_HEADINGS) or (
-        [primary] if primary else []
-    )
 
     return FilmInfo(
         boxd_id=boxd_id,
         title=title or boxd_id,
         year=year,
-        slug=slug,
         genres=genres,
         primary_language=primary,
-        spoken_languages=spoken,
         tmdb_id=str(tmdb_id) if tmdb_id else None,
-        status="ok",
+        status="ok" if recognised else "unparsed",
         fetched_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
-
-
-def _parse_slug(soup: BeautifulSoup) -> str | None:
-    """The `/film/<slug>/` part of the page's own canonical URL."""
-    for node, attr in (
-        (soup.find("link", rel="canonical"), "href"),
-        (soup.find("meta", attrs={"property": "og:url"}), "content"),
-    ):
-        url = node.get(attr) if node else None
-        if url and "/film/" in url:
-            return url.split("/film/", 1)[1].strip("/").split("/")[0] or None
-    return None
 
 
 #: `Challengers (2024)` -> `Challengers`, for the og:title fallback.
@@ -333,27 +356,41 @@ def load_cache(cache_path: Path) -> dict[str, FilmInfo]:
         raw = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+    known = {f.name for f in fields(FilmInfo)}
     films: dict[str, FilmInfo] = {}
     for boxd_id, record in (raw.get("films") or {}).items():
         try:
-            films[boxd_id] = FilmInfo(**record)
-        except TypeError:
+            # Drop fields this version no longer has (older caches carry `slug`
+            # and `spoken_languages`), so an existing cache keeps working.
+            films[boxd_id] = FilmInfo(**{k: v for k, v in record.items() if k in known})
+        except (TypeError, AttributeError):
             continue
     return films
 
 
-def save_cache(cache_path: Path, films: dict[str, FilmInfo]) -> None:
-    """Write the cache atomically, so an interrupt cannot truncate it.
+def save_cache(
+    cache_path: Path,
+    films: dict[str, FilmInfo],
+    stored: dict[str, FilmInfo] | None = None,
+) -> None:
+    """Merge `films` into the cache on disk, writing atomically.
 
-    Only `ok` records are stored: a failure is worth retrying next run.
+    Only `ok` records are stored: a failure is worth retrying next run. Films
+    already on disk that are not in `films` are kept, so a run over a smaller
+    or different group, or a `--refresh-cache` run that is blocked part-way,
+    never shrinks the cache. A new `ok` record replaces the stored one.
+
+    `stored` is the cache as already read from disk. A caller that saves many
+    times passes it, and it is updated in place, to avoid decoding the file on
+    every save; without it the file is read here.
     """
     cache_path.parent.mkdir(parents=True, exist_ok=True)
+    merged = stored if stored is not None else load_cache(cache_path)
+    merged.update({i: info for i, info in films.items() if info.status == "ok"})
     payload = {
         "version": 1,
         "films": {
-            boxd_id: asdict(info)
-            for boxd_id, info in sorted(films.items())
-            if info.status == "ok"
+            boxd_id: asdict(info) for boxd_id, info in sorted(merged.items())
         },
     }
     temp = cache_path.with_suffix(cache_path.suffix + ".tmp")
