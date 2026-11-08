@@ -95,23 +95,6 @@ def test_a_title_without_either_panel_is_unparsed():
     assert info.status == "unparsed"
 
 
-def test_unparsed_page_is_counted_missing_and_not_cached(tmp_path, monkeypatch):
-    import matchcut.enrich as enrich_module
-
-    monkeypatch.setattr(
-        enrich_module, "_get_with_backoff", lambda session, boxd_id: "<html></html>"
-    )
-    monkeypatch.setattr(enrich_module.time, "sleep", lambda s: None)
-    cache = tmp_path / "films.json"
-    refs = {"xxxx": FilmRef("xxxx", "Whatever", 2000)}
-
-    films, missing = enrich_module.enrich(refs, cache)
-
-    assert missing == 1
-    assert films["xxxx"].status == "unparsed"
-    assert load_cache(cache) == {}
-
-
 def test_cache_round_trip(tmp_path, parsed):
     path = tmp_path / "cache" / "films.json"
     save_cache(path, {"zld0": parsed})
@@ -207,61 +190,3 @@ def test_cache_is_json_with_a_version(tmp_path, parsed):
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["version"] == 1
     assert payload["films"]["zld0"]["tmdb_id"] == "937287"
-
-
-PAGE = (
-    '<html><body><h1 class="primaryname">Some Film</h1>'
-    '<div id="tab-panel-details"></div></body></html>'
-)
-
-
-def _scripted_fetch(monkeypatch, outcomes):
-    """Replace the network layer: each call yields the next page or raises."""
-    import matchcut.enrich as enrich_module
-
-    queue = list(outcomes)
-
-    def fake(session, boxd_id):
-        outcome = queue.pop(0)
-        if isinstance(outcome, BaseException):
-            raise outcome
-        return outcome
-
-    monkeypatch.setattr(enrich_module, "_get_with_backoff", fake)
-    monkeypatch.setattr(enrich_module.time, "sleep", lambda s: None)
-    return enrich_module
-
-
-def test_an_interrupt_keeps_what_was_already_fetched(tmp_path, monkeypatch):
-    """Two films fetched, then Ctrl-C: far fewer than SAVE_EVERY, so only the
-    final save can have kept them."""
-    enrich_module = _scripted_fetch(monkeypatch, [PAGE, PAGE, KeyboardInterrupt()])
-    cache = tmp_path / "films.json"
-    refs = {i: FilmRef(i, i, 2000) for i in ("aaa", "bbb", "ccc")}
-
-    with pytest.raises(KeyboardInterrupt):
-        enrich_module.enrich(refs, cache)
-
-    assert set(load_cache(cache)) == {"aaa", "bbb"}
-
-
-def test_periodic_saves_count_fetched_films_not_position(tmp_path, monkeypatch):
-    """With SAVE_EVERY of 2 and a refusal first, the first save comes after the
-    second *fetched* film (position 3), not at position 2."""
-    from matchcut.enrich import Blocked
-
-    enrich_module = _scripted_fetch(monkeypatch, [Blocked("429"), PAGE, PAGE, PAGE, PAGE])
-    monkeypatch.setattr(enrich_module, "SAVE_EVERY", 2)
-    saved: list[int] = []
-    real_save = enrich_module.save_cache
-
-    def spy(path, films):
-        saved.append(sum(1 for i in films.values() if i.status == "ok"))
-        real_save(path, films)
-
-    monkeypatch.setattr(enrich_module, "save_cache", spy)
-    refs = {i: FilmRef(i, i, 2000) for i in ("a1", "a2", "a3", "a4", "a5")}
-
-    enrich_module.enrich(refs, tmp_path / "films.json")
-
-    assert saved[0] == 2

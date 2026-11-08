@@ -43,7 +43,7 @@ class FakeSession:
     def get(self, url, timeout=None, allow_redirects=True):
         self.urls.append(url)
         outcome = self.script.pop(0)
-        if isinstance(outcome, Exception):
+        if isinstance(outcome, BaseException):  # includes KeyboardInterrupt
             raise outcome
         return outcome
 
@@ -264,3 +264,54 @@ def test_requests_are_spaced_one_second_apart(monkeypatch, tmp_path):
     # The clock never advances, so the second request has to wait the full
     # interval; the first has no earlier request to wait for.
     assert recorded == [enrich_module.REQUEST_INTERVAL_SECONDS]
+
+
+# --------------------------------------------------------------------------
+# what reaches the cache, and when
+# --------------------------------------------------------------------------
+
+
+def test_an_unparsed_page_is_counted_missing_and_not_cached(
+    monkeypatch, sleeps, tmp_path
+):
+    install(monkeypatch, [FakeResponse(200, "<html></html>")])
+    cache = tmp_path / "films.json"
+
+    films, missing = enrich(refs_for("xxxx"), cache)
+
+    assert missing == 1
+    assert films["xxxx"].status == "unparsed"
+    assert load_cache(cache) == {}
+
+
+def test_an_interrupt_keeps_what_was_already_fetched(monkeypatch, sleeps, tmp_path):
+    """Two films fetched, then Ctrl-C: far fewer than SAVE_EVERY, so only the
+    final save can have kept them."""
+    install(monkeypatch, [FILM, FILM, KeyboardInterrupt()])
+    cache = tmp_path / "films.json"
+
+    with pytest.raises(KeyboardInterrupt):
+        enrich(refs_for("aaa", "bbb", "ccc"), cache)
+
+    assert set(load_cache(cache)) == {"aaa", "bbb"}
+
+
+def test_periodic_saves_count_fetched_films_not_position(
+    monkeypatch, sleeps, tmp_path
+):
+    """With SAVE_EVERY of 2 and a refusal first, the first save comes after the
+    second *fetched* film (position 3), not at position 2."""
+    install(monkeypatch, [FakeResponse(429)] + [FILM] * 4)
+    monkeypatch.setattr(enrich_module, "SAVE_EVERY", 2)
+    saved: list[int] = []
+    real_save = enrich_module.save_cache
+
+    def spy(path, films):
+        saved.append(sum(1 for info in films.values() if info.status == "ok"))
+        real_save(path, films)
+
+    monkeypatch.setattr(enrich_module, "save_cache", spy)
+
+    enrich(refs_for("a1", "a2", "a3", "a4", "a5"), tmp_path / "films.json")
+
+    assert saved[0] == 2
