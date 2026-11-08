@@ -128,9 +128,11 @@
   <h2>What everyone agrees on</h2>
   <p class="basis">
     {{ consensus.films_counted }} films every member rated.
+    {% if agreement.films_counted %}
     Spread uses {{ agreement.films_counted }} films
-    {% if agreement.basis == "all" %}everyone rated{% else %}at least 3 members rated{% endif %},
+    {% if agreement.basis == "all" %}everyone rated{% else %}at least {{ agreement.min_raters }} members rated{% endif %},
     averaging {{ agreement.mean_spread | stars }} stars apart.
+    {% endif %}
   </p>
   <h3>Shared favorites</h3>
   {{ film_rows(consensus.favorites, "Group mean") }}

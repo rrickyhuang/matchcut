@@ -45,17 +45,6 @@ class FriendPicks:
     items: list[Recommendation] = field(default_factory=list)
 
 
-def _title(group: Group, boxd_id: str) -> tuple[str, int | None]:
-    info = group.films.get(boxd_id)
-    if info is not None and info.title:
-        return info.title, info.year
-    for person in group.people:
-        ref = person.watched.get(boxd_id) or person.watchlist.get(boxd_id)
-        if ref is not None:
-            return ref.title, ref.year
-    return boxd_id, None
-
-
 def from_friends_ratings(group: Group) -> dict[str, FriendPicks]:
     """Per person, their top `PER_PERSON_LIMIT` candidates.
 
@@ -82,7 +71,7 @@ def from_friends_ratings(group: Group) -> dict[str, FriendPicks]:
             mean = sum(r for _, r in raters) / len(raters)
             if mean < MIN_MEAN_RATING:
                 continue
-            title, year = _title(group, boxd_id)
+            title, year = group.title_of(boxd_id)
             picks.append(
                 Recommendation(
                     boxd_id=boxd_id,
@@ -121,7 +110,7 @@ def from_watchlists(group: Group) -> list[Recommendation]:
     for boxd_id, labels in wanted_by.items():
         if len(labels) < MIN_WATCHLISTS:
             continue
-        title, year = _title(group, boxd_id)
+        title, year = group.title_of(boxd_id)
         picks.append(
             Recommendation(
                 boxd_id=boxd_id,

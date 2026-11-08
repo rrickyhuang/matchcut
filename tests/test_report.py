@@ -129,3 +129,13 @@ def test_low_sample_pairs_are_labelled_in_the_report(group, tmp_path):
     out = tmp_path / "report.html"
     build_report(group, Thresholds(min_overlap=30, min_group=2), 0, out)
     assert "low sample" in out.read_text(encoding="utf-8")
+
+
+def test_a_pairs_spread_is_reported_on_the_films_they_both_rated(
+    group, thresholds, tmp_path
+):
+    out = tmp_path / "report.html"
+    build_report(group, thresholds, missing_enrichment=0, out_path=out)
+    text = " ".join(out.read_text(encoding="utf-8").split())
+    assert "Spread uses 4 films everyone rated, averaging 2.00 stars apart." in text
+    assert "at least 3 members" not in text

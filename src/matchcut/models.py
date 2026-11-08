@@ -80,6 +80,21 @@ class Group:
         info = self.films.get(boxd_id)
         return info if info is not None and info.status == "ok" else None
 
+    def title_of(self, boxd_id: str) -> tuple[str, int | None]:
+        """Prefer the enriched title, fall back to whatever an export called it.
+
+        Deliberately not `enriched()`: a film that failed to parse still has a
+        usable title, and the title is all this returns.
+        """
+        info = self.films.get(boxd_id)
+        if info is not None and info.title:
+            return info.title, info.year
+        for person in self.people:
+            ref = person.watched.get(boxd_id) or person.watchlist.get(boxd_id)
+            if ref is not None:
+                return ref.title, ref.year
+        return boxd_id, None
+
 
 @dataclass
 class Thresholds:

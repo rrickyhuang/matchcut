@@ -199,10 +199,21 @@ def bar_chart_svg(
 
 
 _CELL = 64
+HEAT_STEPS = 5
+
+
+def heat_step(score: float) -> int:
+    """Which `--heat-N` token a correlation uses: -1..1 onto 0..4, in even
+    bands (-1 to -0.6 is 0, 0.6 to 1 is 4)."""
+    strength = max(0.0, min(1.0, (score + 1) / 2))
+    return min(int(strength * HEAT_STEPS), HEAT_STEPS - 1)
 
 
 def heatmap_svg(labels: list[str], pairs: list[PairStats]) -> str:
-    """The correlation matrix. Darker means more alike.
+    """The correlation matrix. More ink means more alike.
+
+    Cell and label colours are the `--heat-N` tokens in `base.html`, so both
+    themes keep the label readable. Nothing here is a literal colour.
 
     A pair with no score is left blank rather than shaded, so the picture never
     implies a number the table withholds. A low-sample score is marked `*`.
@@ -256,18 +267,15 @@ def heatmap_svg(labels: list[str], pairs: list[PairStats]) -> str:
                     f"&#8212;</text>"
                 )
                 continue
-            # Map -1..1 onto a light..dark grey ramp.
-            strength = max(0.0, min(1.0, (score + 1) / 2))
-            shade = round(236 - strength * 170)
-            text_fill = "var(--bg)" if shade < 130 else "var(--text)"
+            step = heat_step(score)
             flag = "*" if pair.low_sample else ""
             parts.append(
                 f'<rect x="{x}" y="{y}" width="{_CELL}" height="{_CELL}" '
-                f'fill="rgb({shade},{shade},{shade})" stroke="var(--bg)" '
+                f'fill="var(--heat-{step})" stroke="var(--bg)" '
                 f'stroke-width="2"/>'
                 f'<text x="{x + _CELL / 2:.0f}" y="{y + _CELL / 2 + 4:.0f}" '
-                f'font-size="12" text-anchor="middle" fill="{text_fill}">'
-                f"{score:.2f}{flag}</text>"
+                f'font-size="12" text-anchor="middle" '
+                f'fill="var(--heat-{step}-text)">{score:.2f}{flag}</text>'
             )
     parts.append("</svg>")
     return "".join(parts)

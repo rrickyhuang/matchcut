@@ -95,7 +95,7 @@ and the share breakdowns. Ratings run 0.5 to 5 in half-star steps.
 | Library overlap | Films both watched ÷ films either watched |
 | Tilt | A person's mean rating minus the others' mean, over films they share with at least one other |
 | Rating distribution | Share of a person's ratings at each half-star |
-| Group agreement | Rating spread (highest − lowest) per film among members who rated it. Uses films every member rated; if fewer than 20 qualify, falls back to films at least 3 members rated, and says so |
+| Group agreement | Rating spread (highest − lowest) per film among members who rated it. Uses films every member rated; if fewer than 20 qualify, falls back to films at least 3 members rated (every member, for a pair), and says so |
 | Hot takes | Films the person and at least 2 others rated, ranked by the gap between their rating and the others' mean. Top 4 above, top 4 below |
 | Calling cards | The person's 5-star films no other member has watched. Up to 6, most recently logged first |
 | Genre share | Share of a person's watched films tagged with each genre. A film can carry several genres, so these do not sum to 100% |
