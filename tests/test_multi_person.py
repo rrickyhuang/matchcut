@@ -10,7 +10,6 @@ from __future__ import annotations
 import math
 
 from matchcut.metrics import (
-    PairStats,
     group_agreement,
     hot_takes,
     language_breakdown,
@@ -19,6 +18,8 @@ from matchcut.metrics import (
 from matchcut.models import FilmInfo, FilmRef, Group, Person, Thresholds
 from matchcut.recommend import from_friends_ratings
 from matchcut.render import SECTIONS, bar_chart_svg, build_report, heatmap_svg
+
+from .conftest import make_pair
 
 LOW = Thresholds(min_overlap=2, min_group=2)
 
@@ -270,27 +271,14 @@ def test_languages_beyond_the_top_five_fold_into_other():
 # --------------------------------------------------------------------------
 
 
-def pair(a, b, correlation, low_sample) -> PairStats:
-    return PairStats(
-        a=a,
-        b=b,
-        shared=10,
-        correlation=correlation,
-        mean_abs_diff=0.5,
-        within_half_star=0.5,
-        library_overlap=0.5,
-        low_sample=low_sample,
-    )
-
-
 def test_heatmap_with_three_labels_blanks_unscored_pairs_and_escapes_labels():
     labels = ["a<b", "c&d", "e"]
     svg = heatmap_svg(
         labels,
         [
-            pair("a<b", "c&d", 0.5, low_sample=True),
-            pair("a<b", "e", None, low_sample=False),
-            pair("c&d", "e", -1.0, low_sample=False),
+            make_pair(0.5, low_sample=True, a="a<b", b="c&d"),
+            make_pair(None, a="a<b", b="e"),
+            make_pair(-1.0, a="c&d", b="e"),
         ],
     )
 
