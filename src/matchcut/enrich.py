@@ -70,7 +70,10 @@ def enrich(
 
     A non-zero second value means the report must declare itself partial.
     """
-    cached = {} if refresh else load_cache(cache_path)
+    # Read once. `stored` is what is on disk, and is kept in step with it as the
+    # run saves; `cached` is the part of it this run may reuse.
+    stored = load_cache(cache_path)
+    cached = {} if refresh else stored
     films: dict[str, FilmInfo] = {
         boxd_id: info
         for boxd_id, info in cached.items()
@@ -84,7 +87,7 @@ def enrich(
             f"(about {len(todo) * REQUEST_INTERVAL_SECONDS / 60:.0f} min)"
         )
     if todo:
-        _fetch_all(todo, refs, films, cache_path, progress)
+        _fetch_all(todo, refs, films, cache_path, stored, progress)
 
     # Films never fetched, or whose fetch failed, still need a record so the
     # report can count them and leave them out of the right sections.
@@ -103,9 +106,14 @@ def _fetch_all(
     refs: dict[str, FilmRef],
     films: dict[str, FilmInfo],
     cache_path: Path,
+    stored: dict[str, FilmInfo],
     progress=None,
 ) -> None:
-    """Fetch each id in `todo`, stopping early if Letterboxd starts refusing."""
+    """Fetch each id in `todo`, stopping early if Letterboxd starts refusing.
+
+    `stored` is the cache as read from disk; every save merges into it in
+    place, so the file is never decoded again during the run.
+    """
     session = requests.Session()
     session.headers.update(HEADERS)
     refused_streak = 0
@@ -165,12 +173,14 @@ def _fetch_all(
 
             # Counted in films fetched, not position in `todo`, so refusals and
             # errors in between do not push a save off its cadence.
-            if fetched % SAVE_EVERY == 0 or index == len(todo):
-                save_cache(cache_path, films)
+            if fetched % SAVE_EVERY == 0:
+                save_cache(cache_path, films, stored)
                 if progress:
                     progress(f"  enriched {index}/{len(todo)}")
     finally:
-        save_cache(cache_path, films)
+        save_cache(cache_path, films, stored)
+    if progress:
+        progress(f"  fetched {fetched} of {len(todo)}")
 
 
 def _get_with_backoff(session: requests.Session, boxd_id: str) -> str:
@@ -358,16 +368,24 @@ def load_cache(cache_path: Path) -> dict[str, FilmInfo]:
     return films
 
 
-def save_cache(cache_path: Path, films: dict[str, FilmInfo]) -> None:
+def save_cache(
+    cache_path: Path,
+    films: dict[str, FilmInfo],
+    stored: dict[str, FilmInfo] | None = None,
+) -> None:
     """Merge `films` into the cache on disk, writing atomically.
 
     Only `ok` records are stored: a failure is worth retrying next run. Films
     already on disk that are not in `films` are kept, so a run over a smaller
     or different group, or a `--refresh-cache` run that is blocked part-way,
     never shrinks the cache. A new `ok` record replaces the stored one.
+
+    `stored` is the cache as already read from disk. A caller that saves many
+    times passes it, and it is updated in place, to avoid decoding the file on
+    every save; without it the file is read here.
     """
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    merged = load_cache(cache_path)
+    merged = stored if stored is not None else load_cache(cache_path)
     merged.update({i: info for i, info in films.items() if info.status == "ok"})
     payload = {
         "version": 1,

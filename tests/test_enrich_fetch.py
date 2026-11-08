@@ -306,12 +306,61 @@ def test_periodic_saves_count_fetched_films_not_position(
     saved: list[int] = []
     real_save = enrich_module.save_cache
 
-    def spy(path, films):
+    def spy(path, films, stored=None):
         saved.append(sum(1 for info in films.values() if info.status == "ok"))
-        real_save(path, films)
+        real_save(path, films, stored)
 
     monkeypatch.setattr(enrich_module, "save_cache", spy)
 
     enrich(refs_for("a1", "a2", "a3", "a4", "a5"), tmp_path / "films.json")
 
     assert saved[0] == 2
+
+
+def test_the_cache_file_is_read_once_per_run(monkeypatch, sleeps, tmp_path):
+    """Saving merges into the copy already in memory instead of decoding the
+    whole file again on every periodic save."""
+    install(monkeypatch, [FILM] * 5)
+    monkeypatch.setattr(enrich_module, "SAVE_EVERY", 2)
+    reads: list[int] = []
+    real_load = enrich_module.load_cache
+
+    def counting(path):
+        reads.append(1)
+        return real_load(path)
+
+    monkeypatch.setattr(enrich_module, "load_cache", counting)
+
+    enrich(refs_for("a1", "a2", "a3", "a4", "a5"), tmp_path / "films.json")
+
+    assert len(reads) == 1
+
+
+def test_a_run_that_ends_on_a_save_boundary_saves_once_more_not_twice(
+    monkeypatch, sleeps, tmp_path
+):
+    """Three films with SAVE_EVERY at 25: nothing falls on the cadence, so the
+    only save is the closing one."""
+    install(monkeypatch, [FILM] * 3)
+    saves: list[int] = []
+    real_save = enrich_module.save_cache
+
+    def spy(path, films, stored=None):
+        saves.append(1)
+        real_save(path, films, stored)
+
+    monkeypatch.setattr(enrich_module, "save_cache", spy)
+
+    enrich(refs_for("a1", "a2", "a3"), tmp_path / "films.json")
+
+    assert len(saves) == 1
+
+
+def test_a_run_keeps_cached_films_outside_its_own_group(monkeypatch, sleeps, tmp_path):
+    path = tmp_path / "films.json"
+    save_cache(path, {"old1": cached_film("old1")})
+    install(monkeypatch, [FILM])
+
+    enrich(refs_for("new1"), path)
+
+    assert set(load_cache(path)) == {"old1", "new1"}
