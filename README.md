@@ -55,11 +55,12 @@ Each person does this once, on their own account:
 1. Letterboxd → **Settings** → **Data** → **Export your data**.
 2. Drop the .zip file in `exports/` as it is; there is no need to rename it.
 
-`matchcut` reads three files from the zip:
+`matchcut` reads four files from the zip:
 
 - `ratings.csv` — the ratings every similarity number is built on
 - `watched.csv` — the watched library, used for overlap and share breakdowns
 - `watchlist.csv` — optional; only the group watchlist recommendations use it
+- `profile.csv` — only the username, which becomes the person's label
 
 Films are matched on the `boxd.it` short link in the export, never on title, so
 re-releases and alternate titles do not split into two films. Someone without a
