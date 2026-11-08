@@ -16,7 +16,10 @@ import matchcut.enrich as enrich_module
 from matchcut.enrich import BLOCK_STREAK, MAX_RETRIES, enrich, load_cache, save_cache
 from matchcut.models import FilmInfo, FilmRef
 
-PAGE = '<html><body><h1 class="primaryname">Some Film</h1></body></html>'
+PAGE = (
+    '<html><body><h1 class="primaryname">Some Film</h1>'
+    '<div id="tab-panel-details"></div></body></html>'
+)
 
 
 class FakeResponse:
@@ -89,6 +92,39 @@ def test_stops_after_five_consecutive_refusals(monkeypatch, sleeps, tmp_path):
 def test_403_counts_toward_the_streak_like_429(monkeypatch, sleeps, tmp_path):
     session = install(monkeypatch, [FakeResponse(403)] * 20)
     enrich(refs_for(*ids(8)), tmp_path / "films.json")
+    assert len(session.urls) == BLOCK_STREAK
+
+
+CHALLENGE = FakeResponse(200, "<html><body><p>Just a moment...</p></body></html>")
+FILM = FakeResponse(200)
+
+
+def test_challenge_pages_served_as_200_stop_the_run(monkeypatch, sleeps, tmp_path):
+    """A block that answers 200 with a challenge page is still a block."""
+    session = install(monkeypatch, [CHALLENGE] * 20)
+
+    films, missing = enrich(refs_for(*ids(12)), tmp_path / "films.json")
+
+    assert len(session.urls) == BLOCK_STREAK
+    assert missing == 12
+    assert all(info.status != "ok" for info in films.values())
+
+
+def test_a_real_film_page_resets_the_challenge_streak(monkeypatch, sleeps, tmp_path):
+    script = [CHALLENGE] * 4 + [FILM] + [CHALLENGE] * 4 + [FILM]
+    session = install(monkeypatch, script)
+
+    enrich(refs_for(*ids(10)), tmp_path / "films.json")
+
+    assert len(session.urls) == 10
+
+
+def test_refusals_and_challenge_pages_count_together(monkeypatch, sleeps, tmp_path):
+    script = [FakeResponse(429)] * 3 + [CHALLENGE] * 2 + [FILM] * 5
+    session = install(monkeypatch, script)
+
+    enrich(refs_for(*ids(10)), tmp_path / "films.json")
+
     assert len(session.urls) == BLOCK_STREAK
 
 

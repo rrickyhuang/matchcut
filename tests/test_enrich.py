@@ -74,14 +74,25 @@ def test_unrecognisable_page_still_yields_a_record():
 
 
 def test_film_with_no_genres_is_still_ok():
-    """A real film page can list no genres; only a page with none of the film
-    page's structure is unparsed."""
+    """A real film page can list no genres; it is ok as long as the page still
+    has one of the panels the data comes from."""
     info = parse_film_page(
-        '<html><body><h1 class="primaryname">Obscure</h1></body></html>',
+        '<html><body><h1 class="primaryname">Obscure</h1>'
+        '<div id="tab-panel-details"></div></body></html>',
         "xxxx",
     )
     assert info.status == "ok"
     assert info.genres == []
+
+
+def test_a_title_without_either_panel_is_unparsed():
+    """If the panel ids change but the title survives, the data is gone: a
+    half-parsed page must not be cached as ok with empty genres and language."""
+    info = parse_film_page(
+        '<html><body><h1 class="primaryname">Obscure</h1></body></html>',
+        "xxxx",
+    )
+    assert info.status == "unparsed"
 
 
 def test_unparsed_page_is_counted_missing_and_not_cached(tmp_path, monkeypatch):
@@ -198,7 +209,10 @@ def test_cache_is_json_with_a_version(tmp_path, parsed):
     assert payload["films"]["zld0"]["tmdb_id"] == "937287"
 
 
-PAGE = '<html><body><h1 class="primaryname">Some Film</h1></body></html>'
+PAGE = (
+    '<html><body><h1 class="primaryname">Some Film</h1>'
+    '<div id="tab-panel-details"></div></body></html>'
+)
 
 
 def _scripted_fetch(monkeypatch, outcomes):

@@ -143,8 +143,24 @@ def _fetch_all(
                 refused_streak = 0
                 continue
 
+            info = parse_film_page(html, boxd_id, fallback=refs[boxd_id])
+            films[boxd_id] = info
+            if info.status != "ok":
+                # A block can answer 200 with a challenge or consent page, and
+                # a layout change looks the same. Either way the next requests
+                # will fail too, so these count with 403/429 toward the stop.
+                refused_streak += 1
+                if refused_streak >= BLOCK_STREAK:
+                    if progress:
+                        progress(
+                            f"  Letterboxd returned {BLOCK_STREAK} pages in a "
+                            f"row that are not film pages; stopping after "
+                            f"{index} of {len(todo)}"
+                        )
+                    break
+                continue
+
             refused_streak = 0
-            films[boxd_id] = parse_film_page(html, boxd_id, fallback=refs[boxd_id])
             fetched += 1
 
             # Counted in films fetched, not position in `todo`, so refusals and
@@ -202,16 +218,15 @@ def parse_film_page(
 
     Tested against `tests/fixtures/film_page.html`, never the live site.
 
-    A page showing none of the film page's own structure (a consent or
-    bot-challenge page, or a layout change) comes back with status
-    "unparsed", so it is counted as missing and never cached as if it were a
-    film with no genres.
+    Genres and languages come from the two panels, so a page with neither (a
+    consent or bot-challenge page, or a layout change that renames them even
+    if the title survives) comes back with status "unparsed". It is counted as
+    missing and never cached as if it were a film with no genres. A page with
+    either panel is ok, since a film can list no genres at all.
     """
     soup = BeautifulSoup(html, "html.parser")
     recognised = bool(
-        soup.select_one("h1.primaryname")
-        or soup.find(id="tab-panel-genres")
-        or soup.find(id="tab-panel-details")
+        soup.find(id="tab-panel-genres") or soup.find(id="tab-panel-details")
     )
 
     body = soup.find("body")
