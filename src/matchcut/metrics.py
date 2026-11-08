@@ -269,7 +269,11 @@ def group_agreement(group: Group) -> Agreement:
     pool = full
     if len(full) < AGREEMENT_MIN_FILMS:
         pool = {f: r for f, r in by_film.items() if len(r) >= min_raters}
-        basis = "three-plus"
+        # A pair or a trio has no looser rule to fall back to: asking for as
+        # many raters as the group has gives back the same films. The basis
+        # only changes when the pool really did.
+        if pool.keys() != full.keys():
+            basis = "three-plus"
     if not pool:
         return Agreement(
             basis=basis, films_counted=0, mean_spread=None, min_raters=min_raters

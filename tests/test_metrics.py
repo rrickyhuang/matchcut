@@ -29,7 +29,7 @@ from matchcut.metrics import (
     person_stats,
     summary_facts,
 )
-from matchcut.models import Group, Person, Thresholds
+from matchcut.models import FilmRef, Group, Person, Thresholds
 
 
 # --------------------------------------------------------------------------
@@ -130,19 +130,46 @@ def test_distribution_is_a_share_not_a_count(group):
 # --------------------------------------------------------------------------
 
 
-def test_agreement_falls_back_when_too_few_films_qualify(group):
+def test_a_pair_with_few_films_is_still_scored_on_what_they_both_rated(group):
     """Only 4 films are rated by everyone, under AGREEMENT_MIN_FILMS of 20.
 
     The fallback wants 3 raters per film, which a pair cannot have, so it
-    asks for as many as the group has (2). Those are the same four films
-    (eee has one rater); each has spread 2.0, so the mean is 2.0. The basis
-    still reads as the fallback, so the report can say the sample is small.
+    asks for as many as the group has (2). That is the same four films (eee
+    has one rater), so nothing fell back and the basis stays "all". Each film
+    has spread 2.0, so the mean is 2.0.
     """
     agreement = group_agreement(group)
-    assert agreement.basis == "three-plus"
+    assert agreement.basis == "all"
     assert agreement.min_raters == 2
     assert agreement.films_counted == 4
     assert agreement.mean_spread == 2.0
+
+
+def test_the_basis_falls_back_when_looser_films_really_are_added():
+    """Four people, one film all four rated and one only three did: with fewer
+    than 20 films the pool widens to the three-rater film, and the basis says
+    so."""
+    def person(label, ratings):
+        return Person(
+            label=label,
+            ratings=ratings,
+            watched={i: FilmRef(i, i, 2000) for i in ratings},
+        )
+
+    group = Group(
+        people=[
+            person("a", {"x": 4.0, "y": 4.0}),
+            person("b", {"x": 4.0, "y": 2.0}),
+            person("c", {"x": 4.0, "y": 3.0}),
+            person("d", {"x": 4.0}),
+        ]
+    )
+
+    agreement = group_agreement(group)
+
+    assert agreement.basis == "three-plus"
+    assert agreement.min_raters == 3
+    assert agreement.films_counted == 2  # x (four raters) and y (three)
 
 
 def test_consensus_ranks_by_group_mean(group):

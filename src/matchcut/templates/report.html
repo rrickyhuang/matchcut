@@ -130,7 +130,7 @@
     {{ consensus.films_counted }} films every member rated.
     {% if agreement.films_counted %}
     Spread uses {{ agreement.films_counted }} films
-    {% if agreement.basis == "all" or agreement.min_raters == labels | length %}everyone rated{% else %}at least {{ agreement.min_raters }} members rated{% endif %},
+    {% if agreement.basis == "all" %}everyone rated{% else %}at least {{ agreement.min_raters }} members rated{% endif %},
     averaging {{ agreement.mean_spread | stars }} stars apart.
     {% endif %}
   </p>
