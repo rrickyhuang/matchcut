@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from matchcut.metrics import PairStats
 from matchcut.models import FilmInfo, Group, Thresholds
 
 # boxd_id -> (title, year, genres, primary language)
@@ -151,3 +152,23 @@ def thresholds() -> Thresholds:
     arithmetic rather than the sample-size gates. Gate behaviour has its own
     tests that pass the defaults explicitly."""
     return Thresholds(min_overlap=3, min_group=2)
+
+
+def make_pair(
+    correlation: float | None,
+    low_sample: bool = False,
+    a: str = "ana",
+    b: str = "ben",
+) -> PairStats:
+    """A `PairStats` with fixed, unremarkable numbers around the one that
+    matters. The single place tests build one, so a new field is added once."""
+    return PairStats(
+        a=a,
+        b=b,
+        shared=10,
+        correlation=correlation,
+        mean_abs_diff=0.5,
+        within_half_star=0.5,
+        library_overlap=0.5,
+        low_sample=low_sample,
+    )

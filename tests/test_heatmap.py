@@ -7,21 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from matchcut.metrics import PairStats
 from matchcut.render import HEAT_STEPS, TEMPLATE_DIR, heat_step, heatmap_svg
 
-
-def pair(correlation: float | None, low_sample: bool = False) -> PairStats:
-    return PairStats(
-        a="ana",
-        b="ben",
-        shared=10,
-        correlation=correlation,
-        mean_abs_diff=0.5,
-        within_half_star=0.5,
-        library_overlap=0.5,
-        low_sample=low_sample,
-    )
+from .conftest import make_pair
 
 
 @pytest.mark.parametrize(
@@ -33,14 +21,14 @@ def test_correlation_maps_to_a_step(score, step):
 
 
 def test_cells_use_tokens_and_no_literal_colours():
-    svg = heatmap_svg(["ana", "ben"], [pair(0.9)])
+    svg = heatmap_svg(["ana", "ben"], [make_pair(0.9)])
     assert "rgb(" not in svg and "#" not in svg.replace("&#8212;", "")
     assert 'fill="var(--heat-4)"' in svg
     assert 'fill="var(--heat-4-text)"' in svg
 
 
 def test_a_low_correlation_uses_the_lightest_step():
-    svg = heatmap_svg(["ana", "ben"], [pair(-0.9)])
+    svg = heatmap_svg(["ana", "ben"], [make_pair(-0.9)])
     assert 'fill="var(--heat-0)"' in svg
     assert 'fill="var(--heat-0-text)"' in svg
 
